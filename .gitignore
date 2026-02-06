@@ -1,0 +1,53 @@
+# IDE/editor
+.idea/
+
+# Virtual environments
+.venv/
+venv/
+
+# CMake build output
+cmake-build-*/
+build/
+
+# Other build output
+Simu5G/out/
+inet/out/
+*.gch
+
+# Python cache
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+
+# Compiled artifacts
+*.o
+*.a
+*.so
+*.dylib
+*.dll
+*.exe
+
+# Logs
+*.log
+
+# OS files
+.DS_Store
+
+# Third-party/bundled software
+omnetpp-6.3.0/
+inet/
+
+# Simulation outputs
+Simu5G-Gym/out/
+Simu5G-Gym/simulations/**/results*/
+simu5g-energy-gym/Simu5G-Gym/out/
+simu5g-energy-gym/Simu5G-Gym/simulations/**/results*/
+*.vec
+*.sca
+*.vci
+
+# Built binaries
+Simu5G/bin/
+Simu5G-Gym/src/Simu5G-Gym*
+simu5g-energy-gym/Simu5G-Gym/src/Simu5G-Gym*

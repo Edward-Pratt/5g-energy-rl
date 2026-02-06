@@ -1,0 +1,27 @@
+# build + results
+out/
+**/out/
+results/
+**/*.sca
+**/*.vec
+**/*.vci
+**/*.elog
+**/*.log
+
+# python
+venv/
+.venv/
+__pycache__/
+*.pyc
+
+# editor/ide
+.vscode/
+.idea/
+*.swp
+
+# big external deps (keep out of the repo)
+../Simu5G/
+../inet/
+../omnetpp-*/
+../omnetpp-*.tgz
+

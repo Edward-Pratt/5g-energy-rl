@@ -1,0 +1,8 @@
+[project]
+name = "simu5g-python"
+version = "0.1.0"
+description = "Add your description here"
+requires-python = ">=3.10"
+dependencies = [
+    "torch>=2.10.0",
+]

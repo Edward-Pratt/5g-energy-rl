@@ -1,0 +1,7 @@
+# Extra linker flags for protobuf on Arch (pulls in abseil deps)
+PROTOBUF_LIBS := $(shell pkg-config --libs protobuf)
+LIBS += $(PROTOBUF_LIBS)
+
+# Link only Cmdenv to avoid hard dependency on Qtenv at runtime
+USERIF_LIBS = $(CMDENV_LIBS)
+OMNETPP_LIBS = $(OPPMAIN_LIB) $(USERIF_LIBS) $(KERNEL_LIBS) $(SYS_LIBS)
