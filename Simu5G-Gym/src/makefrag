@@ -2,6 +2,9 @@
 PROTOBUF_LIBS := $(shell pkg-config --libs protobuf)
 LIBS += $(PROTOBUF_LIBS)
 
+# Include INET and Simu5G headers for energy and PHY access
+INCLUDE_PATH += -I$(INET_PROJ)/src -I$(SIMU5G_PROJ)/src
+
 # Link only Cmdenv to avoid hard dependency on Qtenv at runtime
 USERIF_LIBS = $(CMDENV_LIBS)
 OMNETPP_LIBS = $(OPPMAIN_LIB) $(USERIF_LIBS) $(KERNEL_LIBS) $(SYS_LIBS)

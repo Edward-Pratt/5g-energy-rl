@@ -54,7 +54,7 @@ for action in 0 1 2; do
   SPID=$!
 
   # run headless
-  "$EXE" -u Cmdenv -n "$NEDPATH" omnetpp.ini -c VoIP-DL-PPO
+  "$EXE" -u Cmdenv -n "$NEDPATH" omnetpp.ini -c CBR-DL-PPO -r 0
 
   cleanup
 done

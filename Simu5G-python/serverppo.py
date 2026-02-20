@@ -10,7 +10,7 @@ from torch.optim import Adam
 
 
 class PolicyNet(nn.Module):
-    def __init__(self, obs_dim):
+    def __init__(self, obs_dim, eval_mode=False):
         super().__init__()
         self.net = nn.Sequential(
             nn.Linear(obs_dim, 64), nn.Tanh(),
@@ -19,15 +19,23 @@ class PolicyNet(nn.Module):
         self.mu = nn.Linear(64, 1)
         self.v = nn.Linear(64, 1)
         self.log_std = nn.Parameter(torch.tensor([-0.5]))
+        self.eval_mode = eval_mode
 
     def forward(self, x):
         h = self.net(x)
         return self.mu(h), self.v(h)
+    
+    def get_log_std(self):
+        """Returns log_std, potentially reduced during eval for deterministic policy."""
+        if self.eval_mode:
+            # During evaluation, use very small std for near-deterministic behavior
+            return torch.clamp(self.log_std, max=-3.0)
+        return self.log_std
 
 
 
 class PPOAgent:
-    def __init__(self, obs_dim=6, lr=3e-4, gamma=0.99, lam=0.95, clip=0.2, ent=0.01, device="cpu"):
+    def __init__(self, obs_dim=8, lr=3e-4, gamma=0.99, lam=0.95, clip=0.2, ent=0.01, device="cpu"):
         self.obs_dim = obs_dim
         self.gamma = gamma
         self.lam = lam
@@ -52,12 +60,17 @@ class PPOAgent:
     def act(self, obs, greedy=False):
         x = torch.tensor(obs, dtype=torch.float32, device=self.device).unsqueeze(0)
         mu, v = self.model(x)
-        std = torch.exp(self.model.log_std).expand_as(mu)
+        
+        # Use get_log_std() to respect eval_mode for deterministic policy
+        log_std = self.model.get_log_std()
+        std = torch.exp(log_std).expand_as(mu)
         dist = torch.distributions.Normal(mu, std)
 
         if greedy:
+            # Deterministic action: use mean directly
             z = mu
         else:
+            # Stochastic action: sample from distribution
             z = dist.rsample()
 
         u = torch.tanh(z)  # [-1,1]
@@ -94,7 +107,7 @@ class PPOAgent:
         adv = (adv - adv.mean()) / (adv.std() + 1e-8)
         return adv, ret
 
-    def update(self, epochs=10, batch_size=64):
+    def update(self, last_val=0.0, epochs=10, batch_size=64):
         if len(self.obs_buf) < 32:
             self.reset_buffer()
             return
@@ -103,7 +116,7 @@ class PPOAgent:
         u = torch.tensor(np.array(self.act_buf), dtype=torch.float32, device=self.device).unsqueeze(1)  # [-1,1]
         old_logp = torch.tensor(np.array(self.logp_buf), dtype=torch.float32, device=self.device)
 
-        adv, ret = self._finish_path(last_val=0.0)
+        adv, ret = self._finish_path(last_val=last_val)
         adv = torch.tensor(adv, dtype=torch.float32, device=self.device)
         ret = torch.tensor(ret, dtype=torch.float32, device=self.device)
 
@@ -116,7 +129,8 @@ class PPOAgent:
                 mb = idxs[start:start + batch_size]
 
                 mu, v = self.model(obs[mb])
-                std = torch.exp(self.model.log_std).expand_as(mu)
+                log_std = self.model.get_log_std()
+                std = torch.exp(log_std).expand_as(mu)
                 dist = torch.distributions.Normal(mu, std)
 
                 # clamp u to avoid atanh blow-ups
@@ -173,17 +187,20 @@ def main():
     sock.bind(f"tcp://{args.host}:{args.port}")
     print(f"[PPO] Listening on {args.host}:{args.port} | mode={args.mode} | seed={args.seed}")
 
-    agent = PPOAgent(obs_dim=6)
+    agent = PPOAgent(obs_dim=8)
 
     if args.mode == "eval":
         agent.model.load_state_dict(torch.load(args.checkpoint, map_location="cpu"))
         agent.model.eval()
+        agent.model.eval_mode = True  # Enable deterministic policy for eval
         print(f"[PPO] Loaded checkpoint {args.checkpoint}")
+    else:
+        agent.model.eval_mode = False  # Stochastic policy during training
 
     logf = open(args.log, "a", newline="")
     w = csv.writer(logf)
     if logf.tell() == 0:
-        w.writerow(["ts","episode","step","thr","delay","jitter","loss","numUe","stepEnergyJ","rew","act"])
+        w.writerow(["ts","episode","step","thr","delay","jitter","loss","numUe","stepEnergyJ","txPowerDbm","sinr","rew","act_m"])
 
     last_obs = None
     last_u = None
@@ -244,16 +261,16 @@ def main():
                 ep_return += rew
                 steps += 1
 
-                if args.mode == "train" and len(agent.obs_buf) >= args.update_every:
-                    agent.update()
-                    print(f"[PPO] Update done @ episode={episode} step={steps} return≈{ep_return:.3f}")
-
             # pick next action
             greedy = (args.mode == "eval" and args.greedy_eval)
             m, logp, v, u = agent.act(obs, greedy=greedy)
 
-            thr, delay, jitter, loss, numUe, stepE = obs.tolist()
-            w.writerow([time.time(), episode, steps, thr, delay, jitter, loss, numUe, stepE, rew, m])
+            if args.mode == "train" and len(agent.obs_buf) >= args.update_every:
+                agent.update(last_val=v)
+                print(f"[PPO] Update done @ episode={episode} step={steps} return≈{ep_return:.3f}")
+
+            thr, delay, jitter, loss, numUe, stepE, txPowerDbm, sinr = obs.tolist()
+            w.writerow([time.time(), episode, steps, thr, delay, jitter, loss, numUe, stepE, txPowerDbm, sinr, rew, m])
             logf.flush()
 
             last_obs = obs

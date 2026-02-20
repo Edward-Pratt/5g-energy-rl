@@ -67,6 +67,16 @@ add_make_target(simu5g_gym_cleanall "${ENV_OMNETPP_INET}" "${SIMU5G_GYM_ROOT}" c
 add_dependencies(simu5g_gym simu5g)
 add_dependencies(simu5g_gym_debug simu5g_debug)
 
+# IDE-only sources for CLion indexing
+set(SIMU5G_GYM_IDE_SOURCES
+  ${SIMU5G_GYM_ROOT}/src/gym/GymConnection.cc
+  ${SIMU5G_GYM_ROOT}/src/gym/GymConnection.h
+  ${SIMU5G_GYM_ROOT}/src/gym/GymEnergyConsumer.cc
+  ${SIMU5G_GYM_ROOT}/src/gym/GymEnergyConsumer.h
+)
+target_sources(simu5g_gym PRIVATE ${SIMU5G_GYM_IDE_SOURCES})
+target_sources(simu5g_gym_debug PRIVATE ${SIMU5G_GYM_IDE_SOURCES})
+
 add_custom_target(all_release)
 add_dependencies(all_release omnetpp_release inet simu5g simu5g_gym)
 

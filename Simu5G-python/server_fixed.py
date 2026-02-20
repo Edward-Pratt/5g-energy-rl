@@ -24,7 +24,7 @@ def main():
     logf = open(args.out, "a", newline="")
     w = csv.writer(logf)
     if logf.tell() == 0:
-        w.writerow(["ts","episode","step","thr","delay","jitter","loss","numUe","stepEnergyJ","rew","act_m"])
+        w.writerow(["ts","episode","step","thr","delay","jitter","loss","numUe","stepEnergyJ","txPowerDbm","sinr","rew","act_m"])
 
     episode = 0
     step = 0
@@ -69,8 +69,8 @@ def main():
             sock.send(reply.SerializeToString())
 
             # log
-            thr, delay, jitter, loss, numUe, stepE = obs
-            w.writerow([time.time(), episode, step, thr, delay, jitter, loss, numUe, stepE, rew, m])
+            thr, delay, jitter, loss, numUe, stepE, txPowerDbm, sinr = obs
+            w.writerow([time.time(), episode, step, thr, delay, jitter, loss, numUe, stepE, txPowerDbm, sinr, rew, m])
             logf.flush()
 
             ep_return += rew

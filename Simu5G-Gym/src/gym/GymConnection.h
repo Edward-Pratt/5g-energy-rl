@@ -3,6 +3,11 @@
 #include <zmq.hpp>
 #include <omnetpp.h>
 #include "veinsgym.pb.h"
+#include <vector>
+#include <unordered_map>
+
+class GymEnergyConsumer;
+namespace simu5g { class LtePhyEnb; class LtePhyUe; }
 
 class GymConnection : public omnetpp::cSimpleModule, public omnetpp::cListener {
 public:
@@ -11,6 +16,10 @@ public:
     void finish() override;
     void receiveSignal(omnetpp::cComponent *source, omnetpp::simsignal_t signalID,
                        double value, omnetpp::cObject *details) override;
+    void receiveSignal(omnetpp::cComponent *source, omnetpp::simsignal_t signalID,
+                       omnetpp::intval_t value, omnetpp::cObject *details) override;
+    void receiveSignal(omnetpp::cComponent *source, omnetpp::simsignal_t signalID,
+                       omnetpp::uintval_t value, omnetpp::cObject *details) override;
     void receiveSignal(omnetpp::cComponent *src, omnetpp::simsignal_t id,
                        const omnetpp::SimTime& value, omnetpp::cObject *details) override;
     
@@ -28,18 +37,27 @@ private:
     void setTrafficPaused(bool paused);
 
     // ---- VoIP metrics (latest observed values) ----
-    double lastThroughput= 0.0;
+    double lastThroughput = 0.0;
     double lastFrameDelay = 0.0;
     double lastJitter = 0.0;
     double lastLoss = 0.0;
-    omnetpp::simsignal_t sigGenThroughput;
-    double lastGenThroughput = 0.0;     // if you use the cleaner approach
-    double lastRxThroughput = 0.0;      // only if you keep rx throughput too
-    // signal IDs (initialize to -1; avoid SIMSIGNAL_NULL headaches)
-    omnetpp::simsignal_t sigThroughput = -1;
-    omnetpp::simsignal_t sigFrameDelay = -1;
-    omnetpp::simsignal_t sigJitter = -1;
-    omnetpp::simsignal_t sigLoss = -1;   // pick one loss signal to start
+    double lastGenThroughput = 0.0;
+
+    // ---- Signal IDs (registered in initialize()) ----
+    struct SignalIds {
+        omnetpp::simsignal_t genThroughput = -1;
+        omnetpp::simsignal_t throughput = -1;
+        omnetpp::simsignal_t frameDelay = -1;
+        omnetpp::simsignal_t jitter = -1;
+        omnetpp::simsignal_t loss = -1;
+        omnetpp::simsignal_t sinrDl = -1;
+        omnetpp::simsignal_t sinrUl = -1;
+        omnetpp::simsignal_t measuredSinrDl = -1;
+        omnetpp::simsignal_t measuredSinrUl = -1;
+        omnetpp::simsignal_t cbrRxBytes = -1;
+        omnetpp::simsignal_t cbrTxBytes = -1;
+        omnetpp::simsignal_t cbrDelay = -1;
+    } signals;
 
     double baseSampling = 0.02; // 50 pkt/s
     double minSampling = 0.005;
@@ -56,9 +74,31 @@ private:
     double energyJ = 0.0;
     double stepEnergyJ = 0.0;
     double deliveredBits = 0.0;
+    double currentTxPowerDbm = 0.0;
+
+    GymEnergyConsumer* energyConsumer = nullptr;
+    simu5g::LtePhyEnb* gnbPhy = nullptr;
+    std::vector<simu5g::LtePhyUe*> uePhys;
+
+    std::unordered_map<const omnetpp::cComponent*, double> rxThrByComp;
+    std::unordered_map<const omnetpp::cComponent*, double> delayByComp;
+    std::unordered_map<const omnetpp::cComponent*, double> jitterByComp;
+    std::unordered_map<const omnetpp::cComponent*, double> lossByComp;
+    std::unordered_map<const omnetpp::cComponent*, double> sinrByComp;
+
+    double rxBytesTotal = 0.0;
+    double txBytesTotal = 0.0;
+    double lastRxBytesTotal = 0.0;
+    double lastTxBytesTotal = 0.0;
+    double delaySum = 0.0;
+    double delaySqSum = 0.0;
+    int delayCount = 0;
+
+    bool warnedNoSinr = false;
+    bool warnedNoVoip = false;
+    bool shutdownSent = false;
 
     //Helper
     void updateEnergy();
     int getNumUE() const;
 };
-

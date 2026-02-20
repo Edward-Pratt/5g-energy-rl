@@ -31,7 +31,7 @@ PROJECTRELATIVE_PATH = src
 O = $(PROJECT_OUTPUT_DIR)/$(CONFIGNAME)/$(PROJECTRELATIVE_PATH)
 
 # Object files for local .cc, .msg and .sm files
-OBJS = $O/gym/GymConnection.o $O/gym/protobuf/veinsgym.pb.o
+OBJS = $O/gym/GymConnection.o $O/gym/GymEnergyConsumer.o $O/gym/protobuf/veinsgym.pb.o
 
 # Message files
 MSGFILES =

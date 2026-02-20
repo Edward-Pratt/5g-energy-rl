@@ -4,5 +4,15 @@ version = "0.1.0"
 description = "Add your description here"
 requires-python = ">=3.10"
 dependencies = [
-    "torch>=2.10.0",
+    "cloudpickle==3.1.2",
+    "gym==0.26.2",
+    "gym-notices==0.1.0",
+    "matplotlib>=3.10.8",
+    "numpy==1.26.4",
+    "pandas>=2.3.3",
+    "protobuf==3.20.3",
+    "pyzmq==27.1.0",
+    "torch>=2.1.0",
+    "veins-gym==0.3.3",
+    "zmq==0.0.0",
 ]

@@ -45,4 +45,4 @@ trap 'kill "$SPID" 2>/dev/null || true; wait "$SPID" 2>/dev/null || true' EXIT I
 cd "$GYM_DIR"
 
 # run headless
-"$EXE" -u Cmdenv -n "$NEDPATH" omnetpp.ini -c VoIP-DL-PPO
+"$EXE" -u Cmdenv -n "$NEDPATH" omnetpp.ini -c CBR-DL-PPO -r 0

@@ -31,4 +31,15 @@ simple GymConnection {
 	double tickInterval @unit(s) = default(0.1s);
 	double pActive @unit(W) = default(100W);
 	double pSleep @unit(W) = default(10W);
+	double pComputeBase @unit(W) = default(20W);
+	double pComputePerUe @unit(W) = default(2W);
+	double pTxCoeff = default(0.001); // W per mW of tx power (scaling factor)
+
+	double txPowerMin @unit(dBm) = default(30dBm);
+	double txPowerMax @unit(dBm) = default(46dBm);
+
+	string gnbPhyPath = default("gnb.cellularNic.phy");
+	string energyConsumerPath = default("gnb.energyConsumer");
+	string sinrDlPath = default(""); // optional override; leave empty for auto-detect
+	string sinrUlPath = default(""); // optional override; leave empty for auto-detect
 }

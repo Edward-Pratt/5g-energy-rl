@@ -13,6 +13,7 @@
 //
 
 import GymConnection;
+import GymGNodeB;
 
 import inet.networklayer.configurator.ipv4.Ipv4NetworkConfigurator;
 import inet.networklayer.ipv4.RoutingTableRecorder;
@@ -70,7 +71,7 @@ network StandaloneGym
         iUpf: Upf {
             @display("p=725,118");
         }
-        gnb: gNodeB {
+        gnb: GymGNodeB {
             @display("p=726,277;is=vl");
         }
         bgCell[numBgCells]: BackgroundCell {
