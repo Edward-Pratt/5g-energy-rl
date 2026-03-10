@@ -443,7 +443,6 @@ void GymConnection::handleMessage(omnetpp::cMessage *msg)
 
     auto *step = req.mutable_step();
 
-
     auto *obs = step->mutable_observation();
     auto *box = obs->mutable_box();
     box->add_values(thr);

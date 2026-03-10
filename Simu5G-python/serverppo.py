@@ -133,7 +133,7 @@ class PPOAgent:
                 std = torch.exp(log_std).expand_as(mu)
                 dist = torch.distributions.Normal(mu, std)
 
-                # clamp u to avoid atanh blow-ups
+                # clamp u to avoid atanh issues
                 u_mb = torch.clamp(u[mb], -0.999999, 0.999999)
 
                 # atanh(u) = 0.5 * (log(1+u) - log(1-u))
