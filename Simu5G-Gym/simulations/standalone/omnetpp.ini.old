@@ -1,0 +1,229 @@
+[General]
+abstract = true
+sim-time-limit=1000s
+**.routingRecorder.enabled = false
+cmdenv-express-mode = true
+cmdenv-autoflush = false
+cmdenv-status-frequency = 10s
+
+
+############### Statistics ##################
+output-scalar-file = ${resultdir}/${configname}/${repetition}.sca
+output-vector-file = ${resultdir}/${configname}/${repetition}.vec
+seed-set = ${repetition}
+**.vector-recording = false
+**.scalar-recording = true
+**.statistic-recording = true
+**.collectSinrStatistics = true
+
+################ Mobility parameters #####################
+# *
+
+**.mobility.constraintAreaMaxX = 1000m
+**.mobility.constraintAreaMaxY = 1000m
+**.mobility.constraintAreaMinX = 0m
+**.mobility.constraintAreaMinY = 0m
+**.mobility.constraintAreaMinZ = 0m
+**.mobility.constraintAreaMaxZ = 0m
+**.mobility.initFromDisplayString = false
+
+############### Number of Resource Blocks ################
+**.numBands = 25 # this value should be kept equal to the number of RBs
+
+############### Transmission Power ##################
+**.ueTxPower = 26dBm
+**.eNodeBTxPower = 40dBm
+**.targetBler = 0.01
+**.blerShift = 5
+
+############### IPv4 configurator config #################
+*.configurator.config = xmldoc("./demo.xml")
+
+
+#------------------------------------#
+# Config Standalone
+#
+# Topology configuration for the exemplary scenario for NR Standalone deployment
+#
+[Config Standalone]
+network = StandaloneGym
+sim-time-limit=20s
+
+############### gym configuration #############
+*.gym.host = "127.0.0.1"
+*.gym.port = 5555
+#*.gym.action_space = "gym.spaces.Discrete(3)"
+**.gym.action_space = "Box(low=0.0, high=2.0, shape=(1,))"
+
+*.gym.observation_space = "gym.spaces.Box(low=-1e9, high=1e9, shape=(8,), dtype=float)"
+
+*.gym.tickInterval = 0.1s
+*.gym.pActive = 100W
+*.gym.pSleep = 10W
+*.gym.txPowerMin = 0dBm
+
+
+
+############### e/gNodeB configuration #################
+*.gnb.mobility.initialX = 450m
+*.gnb.mobility.initialY = 300m
+
+############## UE configuration ##################
+*.numUe = 20
+
+# connect the UE's NIC to the corresponding serving gNB (NR side only)
+*.ue[*].macCellId = 0
+*.ue[*].masterId = 0
+*.ue[*].nrMacCellId = 1
+*.ue[*].nrMasterId = 1
+
+# UE position
+*.ue[*].mobility.initialX = uniform(350m, 550m)
+*.ue[*].mobility.initialY = uniform(250m, 450m)
+#------------------------------------#
+
+
+
+#------------------------------------#
+# Config VoIP-DL
+#
+# General configuration for Voice-over-IP DL traffic to the UE
+#
+[Config VoIP-DL]
+extends=Standalone
+
+# one UDP application for each user
+*.ue[*].numApps = 1
+
+# the amount of UDP applications on server should be equal to (numUEs)*(ue[*].numApps)
+*.server.numApps = 20
+
+#============= Application Setup =============
+*.ue[*].app[*].typename = "VoipReceiver"
+*.ue[*].app[0].localPort = 3000
+
+*.server.app[*].packetSize = 40B
+*.server.app[*].destAddress = "ue[" + string(ancestorIndex(0)) + "]" # map each app to a UE
+*.server.app[*].localPort = 3088+ancestorIndex(0)
+*.server.app[*].typename = "VoipSender"
+*.server.app[*].startTime = uniform(0s,0.02s)
+#------------------------------------#
+
+
+
+#------------------------------------#
+# Config VoIP-UL
+#
+# General configuration for Voice-over-IP UL traffic from the UE
+#
+[Config VoIP-UL]
+extends=Standalone
+repeat = 10
+# one UDP application for each user
+*.ue[*].numApps = 1
+
+# the amount of UDP applications on server should be equal to (numUEs)*(ue[*].numApps)
+*.server.numApps = 1
+
+#============= Application Setup =============
+*.server.app[*].typename = "VoipReceiver"
+*.server.app[*].localPort = 3000+ancestorIndex(0)
+
+*.ue[*].app[*].packetSize = 40B
+# obtain the address of the client by reading its index in the array of udp Apps
+*.ue[*].app[*].destAddress = "server"
+*.ue[*].app[*].localPort = 3088+ancestorIndex(0)
+*.ue[*].app[*].typename = "VoipSender"
+*.ue[*].app[*].startTime = uniform(0s,0.02s)
+#------------------------------------#
+
+
+
+[Config VoIP-DL-A0]
+extends=VoIP-DL-PPO
+repeat = 10
+
+[Config VoIP-DL-A1]
+extends=VoIP-DL-PPO
+repeat = 10
+
+[Config VoIP-DL-A2]
+extends=VoIP-DL-PPO
+repeat = 10
+
+
+[Config VoIP-DL-PPO]
+extends=VoIP-DL
+repeat = 50
+
+# Remove silence gaps
+*.server.app[0].silences = false
+*.server.app[0].isTalk = true
+
+# Make talkspurts last way longer than your 20s episode (so it never “ends”)
+*.server.app[0].scaleTalk = 1000s
+*.server.app[0].shapeTalk = 10s
+
+# optional, keeps output files separate
+result-dir = results-ppo
+
+
+#------------------------------------#
+# Config CBR-DL-PPO
+#
+# CBR downlink with background-cell interference
+#
+[Config CBR-DL-PPO]
+extends=Standalone
+sim-time-limit=20s
+repeat = 50
+
+**.bgCellInterference = true
+**.downlinkInterference = true
+**.uplinkInterference = true
+
+############### UE configuration ##################
+*.numUe = ${numUe=1}
+*.ue[*].numApps = 1
+*.server.numApps = ${numUe}
+
+*.ue[*].macCellId = 0
+*.ue[*].masterId = 0
+*.ue[*].nrMacCellId = 1
+*.ue[*].nrMasterId = 1
+
+*.ue[*].mobility.initialX = uniform(350m, 550m)
+*.ue[*].mobility.initialY = uniform(250m, 450m)
+
+############## CBR DL traffic ##################
+*.ue[*].app[*].typename = "CbrReceiver"
+*.ue[*].app[*].localPort = 3000
+
+*.server.app[*].typename = "CbrSender"
+*.server.app[*].localPort = 3000+ancestorIndex(0)
+*.server.app[*].destAddress = "ue["+string(ancestorIndex(0))+"]"
+*.server.app[*].destPort = 3000
+*.server.app[*].startTime = uniform(0s, 0.02s)
+*.server.app[*].finishTime = 20s
+*.server.app[*].samplingTime = 0.005s
+*.server.app[*].packetSize = 1500B
+
+############## Background cell (interference) ##################
+*.numBgCells = 2
+*.bgCell[*].bgScheduler.isNr = true
+*.bgCell[*].bgScheduler.txPower = 30dBm
+*.bgCell[0].mobility.initialX = 750m
+*.bgCell[0].mobility.initialY = 300m
+*.bgCell[1].mobility.initialX = 150m
+*.bgCell[1].mobility.initialY = 700m
+
+*.bgCell[*].bgTrafficGenerator.numBgUes = 10
+*.bgCell[*].bgTrafficGenerator.bgUE[*].mobility.initialX = uniform(650m, 850m)
+*.bgCell[*].bgTrafficGenerator.bgUE[*].mobility.initialY = uniform(200m, 400m)
+*.bgCell[*].bgTrafficGenerator.bgUE[*].generator.typename = "TrafficGeneratorCbr"
+*.bgCell[*].bgTrafficGenerator.bgUE[*].generator.startTimeDl = uniform(0s,0.05s)
+*.bgCell[*].bgTrafficGenerator.bgUE[*].generator.packetSizeDl = 1000B
+*.bgCell[*].bgTrafficGenerator.bgUE[*].generator.periodDl = 0.005s
+
+# optional, keeps output files separate
+result-dir = results-cbr-ppo

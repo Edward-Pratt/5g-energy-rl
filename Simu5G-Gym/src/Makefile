@@ -2,7 +2,7 @@
 # OMNeT++/OMNEST Makefile for Simu5G-Gym
 #
 # This file was generated with the command:
-#  opp_makemake -f --deep -KINET_PROJ=../../inet -KSIMU5G_PROJ=../../Simu5G -DINET_IMPORT -Igym/protobuf -L$$\(INET_PROJ\)/src -L$$\(SIMU5G_PROJ\)/src -lprotobuf -lzmq -lINET$$\(D\) -lsimu5g$$\(D\)
+#  opp_makemake -f --deep -KINET_PROJ=../../inet -KSIMU5G_PROJ=../../Simu5G -DINET_IMPORT -Igym/protobuf -L$(INET_PROJ)/src -L$(SIMU5G_PROJ)/src -lprotobuf -lzmq -lINET$(D) -lsimu5g$(D) -loppqtenv
 #
 
 # Name of target to be created (-o option)
@@ -23,7 +23,7 @@ INCLUDE_PATH = -Igym/protobuf
 EXTRA_OBJS =
 
 # Additional libraries (-L, -l options)
-LIBS = $(LDFLAG_LIBPATH)$(INET_PROJ)/src $(LDFLAG_LIBPATH)$(SIMU5G_PROJ)/src  -lprotobuf -lzmq -lINET$(D) -lsimu5g$(D)
+LIBS = $(LDFLAG_LIBPATH)$(INET_PROJ)/src $(LDFLAG_LIBPATH)$(SIMU5G_PROJ)/src  -lprotobuf -lzmq -lINET$(D) -lsimu5g$(D) -loppqtenv
 
 # Output directory
 PROJECT_OUTPUT_DIR = ../out
@@ -88,7 +88,7 @@ endif
 all: $(TARGET_FILES)
 
 $(TARGET_DIR)/% :: $O/%
-	@$(MKPATH) $(TARGET_DIR)
+	@mkdir -p $(TARGET_DIR)
 	$(Q)$(LN) $< $@
 ifeq ($(TOOLCHAIN_NAME),clang-msabi)
 	-$(Q)-$(LN) $(<:%.dll=%.lib) $(@:%.dll=%.lib) 2>/dev/null

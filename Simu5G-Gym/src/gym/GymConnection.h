@@ -2,7 +2,7 @@
 
 #include <zmq.hpp>
 #include <omnetpp.h>
-#include "veinsgym.pb.h"
+#include "protobuf/veinsgym.pb.h"
 #include <vector>
 #include <unordered_map>
 
@@ -97,6 +97,12 @@ private:
     bool warnedNoSinr = false;
     bool warnedNoVoip = false;
     bool shutdownSent = false;
+
+    static constexpr double cqiToEfficiency[16] = {
+        0.0, 0.1523, 0.2344, 0.3770, 0.6016, 0.8770,
+        1.1758, 1.4766, 1.9141, 2.4063, 2.7305,
+        3.3223, 3.9023, 4.5234, 5.1152, 5.5547
+    };
 
     //Helper
     void updateEnergy();

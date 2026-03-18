@@ -1,4 +1,6 @@
 import argparse, time, csv
+import os
+
 import zmq
 import numpy as np
 import veinsgym_pb2 as pb
@@ -181,6 +183,14 @@ def main():
     args = ap.parse_args()
 
     set_seeds(args.seed)
+
+
+    log_dir  = os.path.dirname(args.log)
+    ckpt_dir = os.path.dirname(args.checkpoint)
+    if log_dir:
+        os.makedirs(log_dir, exist_ok=True)
+    if ckpt_dir:
+        os.makedirs(ckpt_dir, exist_ok=True)
 
     ctx = zmq.Context.instance()
     sock = ctx.socket(zmq.REP)

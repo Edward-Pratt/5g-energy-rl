@@ -27,38 +27,29 @@ NUM_EPISODES=1
 MODE="eval"
 GREEDY=false
 CHECKPOINT=""
-SCENARIO="CBR-DL-PPO"
-RUN_INDEX=0
+SCENARIO="CBR-DL-PPO"     # omnetpp.ini [Config ...] name
+RUN_INDEX=0               # -r value passed to the simulator
 LOG_OVERRIDE=""
 
-# ── Valid scenarios ────────────────────────────────────────────────────────────
+# Valid scenarios – used for validation and tab-completion hint in usage
 VALID_SCENARIOS=(
   # ── Original working configs ──
   "CBR-DL-PPO"
   "CBR-DL-DQN"
   "VoIP-DL-PPO"
   "VoIP-DL-DQN"
-
-  # ── New training scenarios (variable traffic) ──
-  "Train-Simple"         # 1 UE, 1 gNB, minor interference
-  "Train-Multi"          # 2–3 UEs, moderate interference, static
-  "Train-Mobile"         # 2–3 UEs, full interference, random-waypoint mobility
-
   # ── Curriculum: static interference ──
   "Curriculum-Stage1-Easy"
   "Curriculum-Stage2-LightInterference"
   "Curriculum-Stage3-FullStatic"
-
   # ── Curriculum: mobile ──
   "Curriculum-Stage4-SingleMobile"
   "Curriculum-Stage5-MultiStatic"
   "Curriculum-Stage6-MultiMobile"
-
   # ── Stress tests ──
   "Stress-HighInterference"
   "Stress-CellEdge"
   "Stress-Dense"
-
   # ── Evaluation ──
   "Eval-PPO"
   "Eval-DQN"
@@ -66,11 +57,11 @@ VALID_SCENARIOS=(
   "Eval-Compare-DQN"
   "Eval-Mobile-PPO"
   "Eval-Mobile-DQN"
-  "Eval-Dynamic-PPO"
   "Eval-Dynamic-DQN"
+  "Eval-Dynamic-PPO"
 )
 
-# ── DQN defaults ───────────────────────────────────────────────────────────────
+# DQN defaults
 DQN_N_ACTIONS=21
 DQN_LR="1e-3"
 DQN_GAMMA="0.99"
@@ -81,56 +72,45 @@ DQN_EPS_START="1.0"
 DQN_EPS_END="0.05"
 DQN_EPS_DECAY=10000
 
-# ── PPO defaults ───────────────────────────────────────────────────────────────
+# PPO defaults
 PPO_UPDATE_EVERY=512
 PPO_SAVE_EVERY=1
 
 # ── Usage ──────────────────────────────────────────────────────────────────────
-# BUG FIX: the original script used \\\$0 inside an unquoted heredoc.
-# In an unquoted heredoc variable expansion is active, so:
-#   \\\$0  →  \ followed by the expanded value of \$0  (e.g.  \./run.sh)
-#   \\$0   →  the literal string \$0
-# Neither is ideal for a usage line; using \$0 directly prints the real
-# script path, which is the most helpful behaviour.
 usage() {
   cat <<EOF
-Usage: \$0 [OPTIONS]
+Usage: \\$0 [OPTIONS]
 
 General options:
-  --agent AGENT          Which agent to use: ppo | dqn         (default: ppo)
-  --episodes N           Number of episodes to run             (default: 1)
-  --mode MODE            train | eval                          (default: eval)
-  --scenario NAME        OMNeT++ config to run                 (default: CBR-DL-PPO)
-  --run N                Simulation run index (-r N)           (default: 0)
+  --agent AGENT          Which agent to use: ppo | dqn        (default: ppo)
+  --episodes N           Number of episodes to run            (default: 1)
+  --mode MODE            train | eval                         (default: eval)
+  --scenario NAME        OMNeT++ config to run                (default: CBR-DL-PPO)
+  --run N                Simulation run index (-r N)          (default: 0)
   --checkpoint FILE      Checkpoint path (default: <agent>_policy.pt)
-  --greedy               Deterministic policy in eval          (PPO only)
+  --greedy               Deterministic policy in eval         (PPO only)
   --list-scenarios       Print all valid scenario names
   -h, --help             Show this help
 
 PPO-specific options:
-  --update_every N       Steps between PPO updates             (default: 512)
-  --save_every N         Save checkpoint every N episodes      (default: 1)
+  --update_every N       Steps between PPO updates            (default: 512)
+  --save_every N         Save checkpoint every N episodes     (default: 1)
 
 DQN-specific options:
-  --n_actions N          Discrete action bins                  (default: 21)
-  --lr LR                Learning rate                         (default: 1e-3)
-  --gamma G              Discount factor                       (default: 0.99)
-  --buf_size N           Replay buffer capacity                (default: 50000)
-  --batch_size N         Minibatch size                        (default: 64)
-  --target_update N      Hard target-net update period         (default: 500)
-  --eps_start E          Initial epsilon                       (default: 1.0)
-  --eps_end E            Final epsilon                         (default: 0.05)
-  --eps_decay N          Epsilon decay steps                   (default: 10000)
+  --n_actions N          Discrete action bins                 (default: 21)
+  --lr LR                Learning rate                        (default: 1e-3)
+  --gamma G              Discount factor                      (default: 0.99)
+  --buf_size N           Replay buffer capacity               (default: 50000)
+  --batch_size N         Minibatch size                       (default: 64)
+  --target_update N      Hard target-net update period        (default: 500)
+  --eps_start E          Initial epsilon                      (default: 1.0)
+  --eps_end E            Final epsilon                        (default: 0.05)
+  --eps_decay N          Epsilon decay steps                  (default: 10000)
 
 ── Scenario quick-reference ──────────────────────────────────────────────────
   Original (static interference):
     CBR-DL-PPO / CBR-DL-DQN
     VoIP-DL-PPO / VoIP-DL-DQN
-
-  New training scenarios (variable traffic, train in order):
-    Train-Simple       – 1 UE, 1 gNB, minor interference, 3-phase traffic
-    Train-Multi        – 2–3 UEs, moderate interference, 3-phase traffic
-    Train-Mobile       – 2–3 mobile UEs, full interference, 3-phase traffic
 
   Curriculum – static (run in order):
     Curriculum-Stage1-Easy
@@ -149,43 +129,32 @@ DQN-specific options:
     Eval-PPO / Eval-DQN
     Eval-Compare-PPO / Eval-Compare-DQN
     Eval-Mobile-PPO  / Eval-Mobile-DQN
-    Eval-Dynamic-PPO / Eval-Dynamic-DQN
 
 ── Examples ──────────────────────────────────────────────────────────────────
-  # New training pipeline (simple → multi → mobile), PPO
-  \$0 --agent ppo --mode train --episodes 100 \\
-     --scenario Train-Simple --checkpoint ppo_simple.pt
-
-  \$0 --agent ppo --mode train --episodes 150 \\
-     --scenario Train-Multi --checkpoint ppo_simple.pt
-
-  \$0 --agent ppo --mode train --episodes 200 \\
-     --scenario Train-Mobile --checkpoint ppo_multi.pt
-
   # Original scenario, PPO eval
-  \$0 --agent ppo --mode eval --episodes 10
+  \\$0 --agent ppo --mode eval --episodes 10
 
   # Original scenario, DQN train
-  \$0 --agent dqn --mode train --episodes 200
+  \\$0 --agent dqn --mode train --episodes 200
 
   # Curriculum stage 1 – DQN, train from scratch
-  \$0 --agent dqn --mode train --episodes 100 \\
+  \\$0 --agent dqn --mode train --episodes 100 \\
      --scenario Curriculum-Stage1-Easy \\
      --checkpoint dqn_stage1.pt
 
   # Curriculum stage 2 – continue from stage 1 checkpoint
-  \$0 --agent dqn --mode train --episodes 150 \\
+  \\$0 --agent dqn --mode train --episodes 150 \\
      --scenario Curriculum-Stage2-LightInterference \\
      --checkpoint dqn_stage1.pt
 
   # Stress test a trained model
-  \$0 --agent dqn --mode eval --episodes 20 \\
+  \\$0 --agent dqn --mode eval --episodes 20 \\
      --scenario Stress-HighInterference \\
      --checkpoint dqn_policy.pt
 
-  # Fair head-to-head comparison (seed=42 baked into Eval-Compare-* configs)
-  \$0 --agent ppo --mode eval --episodes 20 --scenario Eval-Compare-PPO
-  \$0 --agent dqn --mode eval --episodes 20 --scenario Eval-Compare-DQN
+  # Fair head-to-head comparison (both use seed=42 via Eval-Compare-* config)
+  \\$0 --agent ppo --mode eval --episodes 20 --scenario Eval-Compare-PPO
+  \\$0 --agent dqn --mode eval --episodes 20 --scenario Eval-Compare-DQN
 EOF
   exit 0
 }
@@ -302,7 +271,7 @@ if [[ "$scenario_valid" == false ]]; then
   exit 1
 fi
 
-# ── Warn on suspicious scenario/mode combinations ─────────────────────────────
+# ── Warn if scenario/mode combination looks wrong ─────────────────────────────
 if [[ "$SCENARIO" == Stress-* ]] && [[ "$MODE" == "train" ]]; then
   echo "Warning: stress-test scenarios are intended for eval mode, not train" >&2
 fi
@@ -313,14 +282,6 @@ fi
 
 if [[ "$SCENARIO" == Curriculum-* ]] && [[ "$MODE" == "eval" ]]; then
   echo "Warning: curriculum scenarios are intended for train mode, not eval" >&2
-fi
-
-# BUG FIX: the original script was missing a symmetric warning for the new
-# Train-* scenarios.  Without it a user could accidentally run Train-Mobile
-# in eval mode with no checkpoint and get a confusing error later rather
-# than an early, clear warning here.
-if [[ "$SCENARIO" == Train-* ]] && [[ "$MODE" == "eval" ]]; then
-  echo "Warning: Train-* scenarios are intended for train mode, not eval" >&2
 fi
 
 # ── Default checkpoint ─────────────────────────────────────────────────────────
@@ -334,36 +295,27 @@ fi
 [[ -f "$SERVER"  ]] || { echo "Missing SERVER script: $SERVER" >&2; exit 1; }
 [[ -x "$PY"      ]] || {
   echo "Missing Python interpreter: $PY" >&2
-  echo "Tip: python3 -m venv $SCRIPT_DIR/.venv && $SCRIPT_DIR/.venv/bin/pip install -r $SCRIPT_DIR/requirements.txt" >&2
+  echo "Tip: python3 -m venv $SCRIPT_DIR/.venv" >&2
   exit 1
 }
 
-# BUG FIX: the original script checked for a missing checkpoint only in eval
-# mode, which is correct.  However it also silently allowed train mode to
-# proceed without a checkpoint file and then let the Python server decide
-# what to do.  For DQN this is fine (it creates a fresh network) but for
-# PPO it can silently overwrite a partially-trained checkpoint with a blank
-# one if the path doesn't exist yet.  The safest fix is an explicit info
-# message so the operator knows whether they are starting fresh or
-# continuing from an existing file.
 if [[ "$MODE" == "eval" ]] && [[ ! -f "$CHECKPOINT" ]]; then
-  echo "Error: checkpoint not found for eval: $CHECKPOINT" >&2
+  echo "Error: checkpoint not found: $CHECKPOINT" >&2
   exit 1
 fi
 
-if [[ "$MODE" == "train" ]] && [[ ! -f "$CHECKPOINT" ]]; then
-  echo "Info: no checkpoint found at $CHECKPOINT — starting training from scratch" >&2
+if [[ "$GREEDY" == true ]] && [[ "$AGENT" == "dqn" ]]; then
+  echo "Note: --greedy has no effect for DQN (eval is always greedy)" >&2
 fi
 
-if [[ "$GREEDY" == true ]] && [[ "$AGENT" == "dqn" ]]; then
-  echo "Note: --greedy has no effect for DQN (eval is always greedy via epsilon=0)" >&2
-fi
+
+
 
 # ── Build server command ───────────────────────────────────────────────────────
 SERVER_CMD=("$PY" "$SERVER" --mode "$MODE" --checkpoint "$CHECKPOINT")
 
 if [[ "$AGENT" == "ppo" ]]; then
-  SERVER_CMD+=(--update_every        "$PPO_UPDATE_EVERY")
+  SERVER_CMD+=(--update_every "$PPO_UPDATE_EVERY")
   SERVER_CMD+=(--save_every_episodes "$PPO_SAVE_EVERY")
   if [[ "$GREEDY" == true ]] && [[ "$MODE" == "eval" ]]; then
     SERVER_CMD+=(--greedy_eval)
@@ -371,15 +323,15 @@ if [[ "$AGENT" == "ppo" ]]; then
 fi
 
 if [[ "$AGENT" == "dqn" ]]; then
-  SERVER_CMD+=(--n_actions     "$DQN_N_ACTIONS")
-  SERVER_CMD+=(--lr            "$DQN_LR")
-  SERVER_CMD+=(--gamma         "$DQN_GAMMA")
-  SERVER_CMD+=(--buf_size      "$DQN_BUF_SIZE")
-  SERVER_CMD+=(--batch_size    "$DQN_BATCH_SIZE")
-  SERVER_CMD+=(--target_update "$DQN_TARGET_UPDATE")
-  SERVER_CMD+=(--eps_start     "$DQN_EPS_START")
-  SERVER_CMD+=(--eps_end       "$DQN_EPS_END")
-  SERVER_CMD+=(--eps_decay     "$DQN_EPS_DECAY")
+  SERVER_CMD+=(--n_actions      "$DQN_N_ACTIONS")
+  SERVER_CMD+=(--lr             "$DQN_LR")
+  SERVER_CMD+=(--gamma          "$DQN_GAMMA")
+  SERVER_CMD+=(--buf_size       "$DQN_BUF_SIZE")
+  SERVER_CMD+=(--batch_size     "$DQN_BATCH_SIZE")
+  SERVER_CMD+=(--target_update  "$DQN_TARGET_UPDATE")
+  SERVER_CMD+=(--eps_start      "$DQN_EPS_START")
+  SERVER_CMD+=(--eps_end        "$DQN_EPS_END")
+  SERVER_CMD+=(--eps_decay      "$DQN_EPS_DECAY")
 fi
 
 # ── Log file ───────────────────────────────────────────────────────────────────
@@ -394,16 +346,7 @@ fi
 
 SERVER_CMD+=(--log "$LOG")
 
-# BUG FIX: the original script created $SCRIPT_DIR/checkpoints but never
-# used it — checkpoint paths are fully caller-supplied.  The mkdir is
-# harmless but misleading.  Kept here in case the Python servers default
-# to saving inside checkpoints/, but clarified with a comment.
 mkdir -p "$SCRIPT_DIR/checkpoints"
-
-# BUG FIX: dirname "$LOG" returns "." when LOG has no directory component
-# (e.g. LOG="rollout_ppo_CBR-DL-PPO.csv").  mkdir -p "." is a no-op and
-# safe, but if LOG_OVERRIDE points to a nested path this ensures the
-# directory actually exists before the Python process tries to open the file.
 mkdir -p "$(dirname "$LOG")"
 
 # ── Summary ────────────────────────────────────────────────────────────────────
@@ -431,35 +374,18 @@ cleanup() {
 }
 trap cleanup EXIT INT TERM
 
+
+
+
 # ── Run ────────────────────────────────────────────────────────────────────────
 cd "$GYM_DIR"
 
 "${SERVER_CMD[@]}" &
 SPID=$!
-
-# BUG FIX: the original script used a fixed 1-second sleep to let the Python
-# server start before the first simulator invocation.  On a loaded machine or
-# when PyTorch is slow to import this race can cause the first episode to
-# connect before the ZMQ socket is bound, resulting in a silent hang.
-# Polling the port is more robust than a blind sleep.
-echo "Waiting for Python server to bind on port 5555..."
-for _i in $(seq 1 30); do
-  # ss is preferred; fall back to nc if ss is unavailable
-  if ss -lntu 2>/dev/null | grep -q ':5555 ' \
-     || nc -z 127.0.0.1 5555 2>/dev/null; then
-    echo "Server ready."
-    break
-  fi
-  sleep 1
-  if [[ "$_i" -eq 30 ]]; then
-    echo "Error: Python server did not start within 30 seconds" >&2
-    cleanup
-    exit 1
-  fi
-done
+sleep 1
 
 for ep in $(seq 0 $((NUM_EPISODES - 1))); do
-  echo "==> Episode $((ep + 1)) / $NUM_EPISODES  [$SCENARIO  run $RUN_INDEX]"
+  echo "==> Episode $((ep + 1)) / $NUM_EPISODES  [$SCENARIO]"
   "$EXE" -u Cmdenv -n "$NEDPATH" omnetpp.ini -c "$SCENARIO" -r "$RUN_INDEX"
 done
 

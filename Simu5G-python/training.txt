@@ -1,0 +1,10 @@
+./run.sh --agent ppo --mode train --episodes 100 --scenario Curriculum-Stage1-Easy --checkpoint checkpoints/ppo_curriculum.pt --log logs/ppo_stage1.csv
+
+./run.sh --agent ppo --mode train --episodes 100 --scenario Curriculum-Stage2-LightInterference --checkpoint checkpoints/ppo_curriculum.pt --log logs/ppo_stage2.csv
+
+./run.sh --agent ppo --mode train --episodes 100 --scenario Curriculum-Stage3-FullStatic --checkpoint checkpoints/ppo_curriculum.pt --log logs/ppo_stage3.csv
+
+./run.sh --agent ppo --mode train --episodes 100 --scenario Curriculum-Stage4-SingleMobile --checkpoint checkpoints/ppo_curriculum.pt --log logs/ppo_stage4.csv
+
+./run.sh --agent ppo --mode eval --episodes 100 --scenario Eval-Dynamic-PPO --checkpoint checkpoints/ppo_curriculum.pt --log logs/ppo_eval.csv
+

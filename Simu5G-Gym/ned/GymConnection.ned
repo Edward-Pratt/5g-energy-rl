@@ -34,6 +34,7 @@ simple GymConnection {
 	double pComputeBase @unit(W) = default(20W);
 	double pComputePerUe @unit(W) = default(2W);
 	double pTxCoeff = default(0.001); // W per mW of tx power (scaling factor)
+	double numResourceBlocks = default(50);  // 50 RBs = 10 MHz
 
 	double txPowerMin @unit(dBm) = default(30dBm);
 	double txPowerMax @unit(dBm) = default(46dBm);

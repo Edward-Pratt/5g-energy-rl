@@ -88,6 +88,11 @@ void GymConnection::initialize()
         receiverCount++;
     };
 
+
+    // numResourceBlocks = par("numResourceBlocks").intValue();
+
+
+
     for (int i = 0;; ++i) {
         auto *ue = top->getSubmodule("ue", i);
         if (!ue)
@@ -252,6 +257,9 @@ void GymConnection::initialize()
             EV_WARN << "sinrUlPath override='" << sinrUlPath << "'\n";
     }
 
+
+
+
     currentTxPowerDbm = par("txPowerMax").doubleValue();
     applyMultiplier(mAction);
 
@@ -274,6 +282,7 @@ void GymConnection::receiveSignal(omnetpp::cComponent *source, omnetpp::simsigna
     else if (signalID == signals.sinrDl || signalID == signals.sinrUl || 
              signalID == signals.measuredSinrDl || signalID == signals.measuredSinrUl)
         sinrByComp[source] = value;
+
 }
 
 void GymConnection::receiveSignal(omnetpp::cComponent *, omnetpp::simsignal_t signalID,
@@ -350,6 +359,8 @@ int GymConnection::getNumUE() const
         return top->par("numUe").intValue();
     return 0;
 }
+
+
 
 
 

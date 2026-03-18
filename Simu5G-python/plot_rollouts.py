@@ -330,6 +330,28 @@ def plot_per_episode_summary(dfs, labels, outdir):
         _save(fig, outdir, fname)
 
 
+
+def plot_pareto(dfs, labels, outdir):
+    """Per-episode energy vs QoS tradeoff."""
+    fig, axes = plt.subplots(1, 3, figsize=(14, 4))
+    for (df, lab), color in zip(zip(dfs, labels), PALETTE):
+        s = episode_summary(df)
+        lab = _agent_label(lab, df)
+        axes[0].scatter(s["mean_energy"], s["mean_delay"],
+                        s=20, alpha=0.5, color=color, label=lab)
+        axes[1].scatter(s["mean_energy"], s["mean_loss"],
+                        s=20, alpha=0.5, color=color, label=lab)
+        axes[2].scatter(s["mean_energy"], s["mean_thr"],
+                        s=20, alpha=0.5, color=color, label=lab)
+    for ax, ylabel in zip(axes, ["Mean delay (s)", "Mean loss", "Mean throughput"]):
+        ax.set_xlabel("Mean step energy (J)")
+        ax.set_ylabel(ylabel)
+        ax.legend(fontsize=8)
+        ax.grid(True, alpha=0.3)
+    fig.suptitle("Energy vs QoS Tradeoff (each dot = 1 episode)")
+    _save(fig, outdir, "pareto_energy_qos.png")
+
+
 def plot_single_episode(df, label, outdir):
     """Detailed plots when a single episode is passed."""
     d = derive(df)
@@ -438,6 +460,7 @@ def main():
         plot_throughput_energy(dfs, labels, args.outdir, args.warmup_drop)
         plot_actions(dfs, labels, args.outdir, args.warmup_drop)
         plot_per_episode_summary(dfs, labels, args.outdir)
+        plot_pareto(dfs, labels, args.outdir)
 
         print("\n⭐ Key training plots:")
         print(f"   {args.outdir}/lc_episode_return.png")

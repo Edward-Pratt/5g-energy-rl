@@ -33,6 +33,37 @@ The project aims to optimize energy consumption in 5G GNodeBs using Reinforcemen
 └── CMakeLists.txt           # Main build configuration
 ```
 
+## Prerequisites
+
+Before setting up the project, ensure your system meets the following requirements:
+
+- **Operating System**: Linux (Ubuntu 20.04+, Fedora, etc.), macOS (10.15+), or Windows with WSL2 (Windows Subsystem for Linux).
+- **Hardware**: Multi-core CPU (4+ cores recommended), at least 8GB RAM, sufficient disk space (10GB+ for OMNeT++ and frameworks).
+- **Software Dependencies**:
+  - GCC/Clang with C++17 support (e.g., `g++-9` or later).
+  - Python 3.10 or newer.
+  - CMake 3.16 or newer.
+  - GNU Make.
+  - Protobuf compiler (`protoc`).
+  - Git for cloning repositories.
+  - Package managers: `apt` (Ubuntu/Debian), `dnf` (Fedora), `brew` (macOS), or equivalents.
+- **Optional but Recommended**: `uv` for Python dependency management, `ninja` for faster builds.
+
+Install system dependencies (example for Ubuntu):
+```bash
+sudo apt update
+sudo apt install build-essential cmake ninja-build python3 python3-pip git libprotobuf-dev protobuf-compiler libavcodec-dev libavformat-dev libswscale-dev
+```
+
+## Cloning the Repository
+
+Clone the project repository and navigate to the directory:
+
+```bash
+git clone <repository-url>  # Replace <repository-url> with the actual Git repository URL
+cd <repository-directory>    # Replace <repository-directory> with the cloned directory name
+```
+
 ## Requirements
 
 - **Operating System**: Linux or WSL (Windows Subsystem for Linux).
@@ -45,6 +76,82 @@ The project aims to optimize energy consumption in 5G GNodeBs using Reinforcemen
 
 ## Setup & Installation
 
+### Installing OMNeT++ 6.3.0
+
+1. Download OMNeT++ 6.3.0 from the official website: https://omnetpp.org/download/
+2. Extract the tarball into the project root directory (next to this README):
+   ```bash
+   tar -xzf omnetpp-6.3.0-src.tgz  # Adjust filename as needed
+   cd omnetpp-6.3.0
+   ```
+3. Install OMNeT++:
+   ```bash
+   ./install.sh  # For Linux/macOS, or follow manual steps below
+   ```
+   Manual installation (if install.sh fails):
+   ```bash
+   source setenv
+   ./configure
+   make -j$(nproc)
+   ```
+4. Verify installation:
+   ```bash
+   source setenv
+   omnetpp --version
+   ```
+
+### Installing INET Framework v4.5.4
+
+1. Download INET v4.5.4 from https://inet.omnetpp.org/Download.html
+2. Extract the tarball into the project root directory:
+   ```bash
+   tar -xzf inet-4.5.4-src.tgz  # Adjust filename
+   cd inet
+   ```
+3. Set up environment and build:
+   ```bash
+   source ../omnetpp-6.3.0/setenv  # Ensure OMNeT++ is sourced
+   source setenv
+   pip install -r python/requirements.txt  # Install Python dependencies
+   make makefiles
+   make -j$(nproc)
+   ```
+4. Verify by running an example:
+   ```bash
+   cd examples/inet/routing
+   ./run
+   ```
+
+### Installing Simu5G
+
+1. Download Simu5G from http://simu5g.org/download/ (ensure version compatible with INET 4.5)
+2. Extract the tarball into the project root directory:
+   ```bash
+   tar -xzf simu5g-x.y.z-src.tgz  # Adjust filename
+   cd Simu5G
+   ```
+3. Set up environment and build:
+   ```bash
+   source ../omnetpp-6.3.0/setenv
+   source ../inet/setenv
+   source setenv
+   make makefiles
+   make -j$(nproc)
+   ```
+4. Run tests to verify:
+   ```bash
+   make tests
+   ```
+
+### Installing Simu5G-Gym
+
+Simu5G-Gym is included in the repository under `Simu5G-Gym/`. It will be built with the CMake process below.
+
+### Installing Dependencies
+
+- **Python Dependencies**: Handled in the Python Environment section below.
+- **System Libraries**: Already covered in Prerequisites. Additional libs may be needed for video processing if using certain Simu5G features.
+
 ### 1. OMNeT++ Environment
 Ensure you have the OMNeT++ environment variables set up:
 ```bash
@@ -54,7 +161,10 @@ source omnetpp-6.3.0/setenv
 ### 2. Build C++ Components
 Use CMake to build the entire suite (INET, Simu5G, Simu5G-Gym):
 ```bash
-# Using the provided CMake profiles
+# Configure the build
+cmake -S . -B cmake-build-release -DCMAKE_BUILD_TYPE=Release
+
+# Build all components
 cmake --build cmake-build-release --target all_release
 ```
 Alternatively, build individual components:
@@ -69,6 +179,20 @@ cd Simu5G-python
 uv sync  # Recommended
 # OR: pip install -r requirements.txt
 ```
+
+## Verification Steps
+
+After installation and build, verify the setup:
+
+1. **OMNeT++**: Run a sample simulation.
+2. **INET**: Run an INET example as above.
+3. **Simu5G**: Run Simu5G tests or an example simulation.
+4. **Full Project**: Run a simple PPO evaluation:
+   ```bash
+   cd Simu5G-python
+   ./run_ppo_multi.sh --episodes 1
+   ```
+   Check for successful completion without errors.
 
 ## Running Simulations
 
@@ -100,6 +224,16 @@ python3 plot_rollouts.py --files eval_ppo.csv fixed_0.csv --labels "PPO" "Fixed 
 ```
 
 ## Environment Variables
+
+To set up the environment for development and running simulations, source the following scripts in order:
+
+```bash
+source omnetpp-6.3.0/setenv
+source inet/setenv
+source Simu5G/setenv
+```
+
+This sets the necessary paths and environment variables. The CMake build system uses the following defaults:
 
 - `OMNETPP_ROOT`: Path to OMNeT++ installation (default: `./omnetpp-6.3.0`).
 - `INET_ROOT`: Path to INET framework (default: `./inet`).
