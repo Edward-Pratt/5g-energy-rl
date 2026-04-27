@@ -1,10 +1,164 @@
-./run.sh --agent ppo --mode train --episodes 100 --scenario Curriculum-Stage1-Easy --checkpoint checkpoints/ppo_curriculum.pt --log logs/ppo_stage1.csv
+./run.sh --agent ppo --mode train --episodes 100 --scenario Train-Simple --checkpoint checkpoints/ppo_curriculum.pt --log logs/ppo_stage1.csv
 
-./run.sh --agent ppo --mode train --episodes 100 --scenario Curriculum-Stage2-LightInterference --checkpoint checkpoints/ppo_curriculum.pt --log logs/ppo_stage2.csv
+./run.sh --agent ppo --mode train --episodes 100 --scenario Train-Multi --checkpoint checkpoints/ppo_curriculum.pt --log logs/ppo_stage2.csv
 
-./run.sh --agent ppo --mode train --episodes 100 --scenario Curriculum-Stage3-FullStatic --checkpoint checkpoints/ppo_curriculum.pt --log logs/ppo_stage3.csv
+./run.sh --agent ppo --mode train --episodes 100 --scenario Train-Mobile --checkpoint checkpoints/ppo_curriculum.pt --log logs/ppo_stage3.csv
 
-./run.sh --agent ppo --mode train --episodes 100 --scenario Curriculum-Stage4-SingleMobile --checkpoint checkpoints/ppo_curriculum.pt --log logs/ppo_stage4.csv
+./run.sh --agent ppo --mode eval --episodes 100 --scenario Eval-Dynamic-ppo --checkpoint checkpoints/ppo_curriculum.pt --log logs/ppo_eval.csv
 
-./run.sh --agent ppo --mode eval --episodes 100 --scenario Eval-Dynamic-PPO --checkpoint checkpoints/ppo_curriculum.pt --log logs/ppo_eval.csv
 
+
+./run.sh --agent dqn --mode train --episodes 100 --scenario Train-Simple --checkpoint checkpoints/dqn_curriculum.pt --log logs/dqn_stage1.csv
+
+./run.sh --agent dqn --mode train --episodes 100 --scenario Train-Multi --checkpoint checkpoints/dqn_curriculum.pt --log logs/dqn_stage2.csv
+
+./run.sh --agent dqn --mode train --episodes 100 --scenario Train-Mobile --checkpoint checkpoints/dqn_curriculum.pt --log logs/dqn_stage3.csv
+
+./run.sh --agent dqn --mode eval --episodes 100 --scenario Eval-Dynamic-dqn --checkpoint checkpoints/dqn_curriculum.pt --log logs/dqn_eval.csv
+
+
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# PPO
+# ═══════════════════════════════════════════════════════════════════════════
+
+# Stage 1 – 1 UE, minor interference
+./run.sh \
+  --agent ppo \
+  --mode train \
+  --episodes 100 \
+  --scenario Train-Simple \
+  --checkpoint checkpoints/ppo_stage1.pt \
+  --log logs/ppo_stage1.csv \
+  --update_every 256 \
+  --save_every 10
+
+# Stage 2 – 2 UEs, moderate interference (warm-starts from stage 1)
+./run.sh \
+  --agent ppo \
+  --mode train \
+  --episodes 100 \
+  --scenario Train-Multi \
+  --checkpoint checkpoints/ppo_stage2.pt \
+  --log logs/ppo_stage2.csv \
+  --update_every 256 \
+  --save_every 10
+
+# Stage 3 – 2 mobile UEs, full interference (warm-starts from stage 2)
+./run.sh \
+  --agent ppo \
+  --mode train \
+  --episodes 100 \
+  --scenario Train-Mobile \
+  --checkpoint checkpoints/ppo_stage3.pt \
+  --log logs/ppo_stage3.csv \
+  --update_every 256 \
+  --save_every 10
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# DQN
+# ═══════════════════════════════════════════════════════════════════════════
+
+# Stage 1 – 1 UE, minor interference
+./run.sh \
+  --agent dqn \
+  --mode train \
+  --episodes 100 \
+  --scenario Train-Simple \
+  --checkpoint checkpoints/dqn_stage1.pt \
+  --log logs/dqn_stage1.csv \
+  --update_every 4 \
+  --target_update 1000 \
+  --save_every 10 \
+  --eps_decay 5000
+
+# Stage 2 – 2 UEs, moderate interference (warm-starts from stage 1)
+./run.sh \
+  --agent dqn \
+  --mode train \
+  --episodes 100 \
+  --scenario Train-Multi \
+  --checkpoint checkpoints/dqn_stage2.pt \
+  --log logs/dqn_stage2.csv \
+  --update_every 4 \
+  --target_update 1000 \
+  --save_every 10 \
+  --eps_start 0.2 \
+  --eps_decay 8000
+
+# Stage 3 – 2 mobile UEs, full interference (warm-starts from stage 2)
+./run.sh \
+  --agent dqn \
+  --mode train \
+  --episodes 100 \
+  --scenario Train-Mobile \
+  --checkpoint checkpoints/dqn_stage3.pt \
+  --log logs/dqn_stage3.csv \
+  --update_every 4 \
+  --target_update 1000 \
+  --save_every 10 \
+  --eps_start 0.15 \
+  --eps_decay 10000
+
+
+# PPO — one plot per stage so you can see learning within each stage
+python plot_rollout.py \
+  --files logs/ppo_stage1.csv \
+  --labels "PPO Stage1" \
+  --outdir plots/ppo_stage1 \
+  --var_traffic
+
+python plot_rollout.py \
+  --files logs/ppo_stage2.csv \
+  --labels "PPO Stage2" \
+  --outdir plots/ppo_stage2 \
+  --var_traffic
+
+python plot_rollout.py \
+  --files logs/ppo_stage3.csv \
+  --labels "PPO Stage3" \
+  --outdir plots/ppo_stage3 \
+  --var_traffic
+
+# DQN — same structure
+python plot_rollout.py \
+  --files logs/dqn_stage1.csv \
+  --labels "DQN Stage1" \
+  --outdir plots/dqn_stage1 \
+  --var_traffic
+
+python plot_rollout.py \
+  --files logs/dqn_stage2.csv \
+  --labels "DQN Stage2" \
+  --outdir plots/dqn_stage2 \
+  --var_traffic
+
+python plot_rollout.py \
+  --files logs/dqn_stage3.csv \
+  --labels "DQN Stage3" \
+  --outdir plots/dqn_stage3 \
+  --var_traffic
+
+
+  # Stage 1 comparison
+  python plot_rollout.py \
+    --files logs/ppo_stage1.csv logs/dqn_stage1.csv \
+    --labels PPO DQN \
+    --outdir plots/compare_stage1 \
+    --var_traffic
+
+  # Stage 2 comparison
+  python plot_rollout.py \
+    --files logs/ppo_stage2.csv logs/dqn_stage2.csv \
+    --labels PPO DQN \
+    --outdir plots/compare_stage2 \
+    --var_traffic
+
+  # Stage 3 comparison (the most important — full realistic scenario)
+  python plot_rollout.py \
+    --files logs/ppo_stage3.csv logs/dqn_stage3.csv \
+    --labels PPO DQN \
+    --outdir plots/compare_stage3 \
+    --var_traffic

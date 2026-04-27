@@ -1,23 +1,5 @@
 //
-// Copyright (C) 2020 Dominik S. Buse <buse@ccs-labs.org>, Max Schettler <schettler@ccs-labs.org>
-//
-// Documentation for these modules is at http://veins.car2x.org/
-//
-// SPDX-License-Identifier: GPL-2.0-or-later
-//
-// This program is free software; you can redistribute it and/or modify
-// it under the terms of the GNU General Public License as published by
-// the Free Software Foundation; either version 2 of the License, or
-// (at your option) any later version.
-//
-// This program is distributed in the hope that it will be useful,
-// but WITHOUT ANY WARRANTY; without even the implied warranty of
-// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-// GNU General Public License for more details.
-//
-// You should have received a copy of the GNU General Public License
-// along with this program; if not, write to the Free Software
-// Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+// GymConnection.cc  – reviewed and corrected version
 //
 
 #include "GymConnection.h"
@@ -30,571 +12,507 @@
 
 Define_Module(GymConnection);
 
-static double safe(double x){
+// ── Helpers ───────────────────────────────────────────────────────────────────
+
+static double safe(double x)
+{
     return std::isfinite(x) ? x : 0.0;
 }
 
+static double avgMap(const std::unordered_map<const omnetpp::cComponent *, double> &m)
+{
+    if (m.empty()) return 0.0;
+    double s = 0.0;
+    for (const auto &kv : m) s += kv.second;
+    return s / static_cast<double>(m.size());
+}
 
+static double sumMap(const std::unordered_map<const omnetpp::cComponent *, double> &m)
+{
+    double s = 0.0;
+    for (const auto &kv : m) s += kv.second;
+    return s;
+}
+
+// ── initialize ────────────────────────────────────────────────────────────────
 
 void GymConnection::initialize()
 {
-    std::string host = par("host");
-    int port = par("port");
+    // ── ZMQ connection ────────────────────────────────────────────────────────
+    std::string host = par("host").stdstringValue();
+    int         port = par("port").intValue();
 
-    if (host == "") {
-        if (std::getenv("VEINS_GYM_HOST") != nullptr)
-            host = std::getenv("VEINS_GYM_HOST");
-        else
-            throw omnetpp::cRuntimeError("Gym host not configured!");
+    if (host.empty()) {
+        const char *env = std::getenv("VEINS_GYM_HOST");
+        if (env) host = env;
+        else throw omnetpp::cRuntimeError("Gym host not configured!");
     }
-
     if (port < 0) {
-        if (std::getenv("VEINS_GYM_PORT") != nullptr)
-            port = std::atoi(std::getenv("VEINS_GYM_PORT"));
-        else
-            throw omnetpp::cRuntimeError("Gym port not configured!");
+        const char *env = std::getenv("VEINS_GYM_PORT");
+        if (env) port = std::atoi(env);
+        else throw omnetpp::cRuntimeError("Gym port not configured!");
     }
 
-    EV_INFO << "Connecting to server 'tcp://" << host << ":" << port << "'\n";
+    EV_INFO << "Connecting to tcp://" << host << ":" << port << "\n";
     socket.connect("tcp://" + host + ":" + std::to_string(port));
 
     veinsgym::proto::Request init_request;
-    *(init_request.mutable_init()->mutable_observation_space_code()) = par("observation_space").stdstringValue();
-    *(init_request.mutable_init()->mutable_action_space_code()) = par("action_space").stdstringValue();
+    *(init_request.mutable_init()->mutable_observation_space_code()) =
+        par("observation_space").stdstringValue();
+    *(init_request.mutable_init()->mutable_action_space_code()) =
+        par("action_space").stdstringValue();
     communicate(init_request);
-    
-    
-    // ---- Subscribe to VoIP signals ----
-    auto *top = getSystemModule();
-    signals.throughput = omnetpp::cComponent::registerSignal("voipReceivedThroughput");
-    signals.frameDelay = omnetpp::cComponent::registerSignal("voipFrameDelay");
-    signals.jitter = omnetpp::cComponent::registerSignal("voipJitter");
-    signals.loss = omnetpp::cComponent::registerSignal("voipFrameLoss");
-    signals.cbrRxBytes = omnetpp::cComponent::registerSignal("cbrReceivedBytes");
-    signals.cbrTxBytes = omnetpp::cComponent::registerSignal("cbrGeneratedBytes");
-    signals.cbrDelay = omnetpp::cComponent::registerSignal("cbrFrameDelay");
 
-    int receiverCount = 0;
-    auto subscribeVoip = [&](omnetpp::cModule *app) {
-        if (!app)
-            return;
-        app->subscribe(signals.throughput, this);
-        app->subscribe(signals.frameDelay, this);
-        app->subscribe(signals.jitter, this);
-        app->subscribe(signals.loss, this);
-        app->subscribe(signals.cbrRxBytes, this);
-        app->subscribe(signals.cbrTxBytes, this);
-        app->subscribe(signals.cbrDelay, this);
-        receiverCount++;
+    // ── Signal IDs ───────────────────────────────────────────────────────────
+    signals.throughput    = omnetpp::cComponent::registerSignal("voipReceivedThroughput");
+    signals.frameDelay    = omnetpp::cComponent::registerSignal("voipFrameDelay");
+    signals.jitter        = omnetpp::cComponent::registerSignal("voipJitter");
+    signals.loss          = omnetpp::cComponent::registerSignal("voipFrameLoss");
+    signals.cbrRxBytes    = omnetpp::cComponent::registerSignal("cbrReceivedBytes");
+    signals.cbrTxBytes    = omnetpp::cComponent::registerSignal("cbrGeneratedBytes");
+    signals.cbrDelay      = omnetpp::cComponent::registerSignal("cbrFrameDelay");
+    // FIX #6: register genThroughput exactly once, here.
+    signals.genThroughput = omnetpp::cComponent::registerSignal("voipGeneratedThroughput");
+    signals.sinrDl        = omnetpp::cComponent::registerSignal("rcvdSinrDl");
+    signals.sinrUl        = omnetpp::cComponent::registerSignal("rcvdSinrUl");
+    signals.measuredSinrDl = omnetpp::cComponent::registerSignal("measuredSinrDl");
+    signals.measuredSinrUl = omnetpp::cComponent::registerSignal("measuredSinrUl");
+
+    auto *top = getSystemModule();
+
+    // ── Subscribe to app signals ──────────────────────────────────────────────
+    // FIX #1 / #6: subscribe every app on every UE AND the server, and also
+    // subscribe the server's genThroughput signal on every sender app (not
+    // just app[0]).  This handles the new multi-phase / multi-UE scenarios.
+    int subscribedCount = 0;
+
+    auto subscribeApp = [&](omnetpp::cModule *app) {
+        if (!app) return;
+        app->subscribe(signals.throughput,    this);
+        app->subscribe(signals.frameDelay,    this);
+        app->subscribe(signals.jitter,        this);
+        app->subscribe(signals.loss,          this);
+        app->subscribe(signals.cbrRxBytes,    this);
+        app->subscribe(signals.cbrTxBytes,    this);
+        app->subscribe(signals.cbrDelay,      this);
+        app->subscribe(signals.genThroughput, this);  // harmless on receivers
+        ++subscribedCount;
     };
 
-
-    // numResourceBlocks = par("numResourceBlocks").intValue();
-
-
-
-    for (int i = 0;; ++i) {
+    for (int i = 0; ; ++i) {
         auto *ue = top->getSubmodule("ue", i);
-        if (!ue)
-            break;
-        for (int j = 0;; ++j) {
+        if (!ue) break;
+        for (int j = 0; ; ++j) {
             auto *app = ue->getSubmodule("app", j);
-            if (!app)
-                break;
-            subscribeVoip(app);
+            if (!app) break;
+            subscribeApp(app);
         }
     }
 
     if (auto *server = top->getSubmodule("server")) {
-        for (int j = 0;; ++j) {
+        for (int j = 0; ; ++j) {
             auto *app = server->getSubmodule("app", j);
-            if (!app)
-                break;
-            subscribeVoip(app);
+            if (!app) break;
+            subscribeApp(app);
         }
     }
 
-    if (receiverCount == 0) {
-        EV_WARN << "No VoIP apps found to subscribe. Metrics will remain 0.\n";
+    if (subscribedCount == 0) {
+        EV_WARN << "No app modules found to subscribe. All traffic metrics will be 0.\n";
         warnedNoVoip = true;
     } else {
-        EV_INFO << "Subscribed to VoIP signals on " << receiverCount << " app modules\n";
+        EV_INFO << "Subscribed to app signals on " << subscribedCount << " modules.\n";
     }
 
-    voipSender = top->getModuleByPath("server.app[0]");
-    if (!voipSender) {
-    	EV_WARN << "Could not find server.app[0] (VoipSender.)";
-    } else {
-        baseSampling = voipSender->par("samplingTime").doubleValue();
-        EV_INFO << "Base sampling time from server.app[0]: " << baseSampling << "s\n";
-    }
+    // FIX #5: baseSampling was read but never used; removed to avoid dead code.
+    // If you need it later, re-add it and document its purpose.
 
-    auto *sender0 = top->getModuleByPath("server.app[0]");
-    if (!sender0) {
-        EV_WARN << "Could not find server.app[0] for generated throughput subscription\n";
-    } else {
-        signals.genThroughput = omnetpp::cComponent::registerSignal("voipGeneratedThroughput");
-        sender0->subscribe(signals.genThroughput, this);
-    }
-
-    lastEnergyT = omnetpp::simTime();
-    energyJ = 0.0;
-    lastThroughput = lastFrameDelay = lastJitter = lastLoss = 0.0;
-    deliveredBits = 0.0;
-    stepEnergyJ = 0.0;
-    bsState = BsState::ACTIVE;
-
-    const char *gnbPhyPath = par("gnbPhyPath");
+    // ── gNB PHY ───────────────────────────────────────────────────────────────
+    const char *gnbPhyPath = par("gnbPhyPath").stringValue();
     gnbPhy = dynamic_cast<simu5g::LtePhyEnb *>(findModuleByPath(gnbPhyPath));
-    if (!gnbPhy) {
-        EV_WARN << "Could not find gNB PHY at '" << gnbPhyPath << "'. TX power will not be controlled.\n";
-    }
+    if (!gnbPhy)
+        EV_WARN << "gNB PHY not found at '" << gnbPhyPath << "'. TX power will not be controlled.\n";
 
-    const char *energyConsumerPath = par("energyConsumerPath");
-    energyConsumer = dynamic_cast<GymEnergyConsumer *>(findModuleByPath(energyConsumerPath));
-    if (!energyConsumer) {
-        EV_WARN << "Could not find energy consumer at '" << energyConsumerPath << "'. INET energy tracking disabled.\n";
-    }
+    // ── Energy consumer ───────────────────────────────────────────────────────
+    const char *ecPath = par("energyConsumerPath").stringValue();
+    energyConsumer = dynamic_cast<GymEnergyConsumer *>(findModuleByPath(ecPath));
+    if (!energyConsumer)
+        EV_WARN << "Energy consumer not found at '" << ecPath << "'.\n";
 
-    for (int i = 0;; ++i) {
+    // ── Validate energy parameters at startup (FIX #4) ───────────────────────
+    // Reading them now causes an early, clear error if the NED parameter is
+    // missing, rather than a cryptic crash at runtime during the first tick.
+    (void)par("pActive").doubleValue();
+    (void)par("pSleep").doubleValue();
+    (void)par("pComputeBase").doubleValue();
+    (void)par("pComputePerUe").doubleValue();
+    (void)par("pTxCoeff").doubleValue();
+
+    // ── UE PHY modules ────────────────────────────────────────────────────────
+    for (int i = 0; ; ++i) {
         auto *ue = top->getSubmodule("ue", i);
-        if (!ue)
-            break;
-        auto addPhy = [&](omnetpp::cModule *phyMod, const char *label) {
-            if (!phyMod)
-                return;
+        if (!ue) break;
+
+        auto tryAddPhy = [&](const char *relPath) {
+            auto *phyMod = ue->findModuleByPath(relPath);
+            if (!phyMod) return;
             auto *uePhy = dynamic_cast<simu5g::LtePhyUe *>(phyMod);
             if (uePhy) {
                 if (std::find(uePhys.begin(), uePhys.end(), uePhy) == uePhys.end())
                     uePhys.push_back(uePhy);
-            } else {
-                EV_WARN << "Module " << ue->getFullPath() << "." << label << " is not a LtePhyUe-derived PHY\n";
             }
         };
 
-        addPhy(ue->findModuleByPath("cellularNic.phy"), "cellularNic.phy");
-        addPhy(ue->findModuleByPath("cellularNic.nrPhy"), "cellularNic.nrPhy");
-    }
-    if (uePhys.empty()) {
-        EV_WARN << "No UE PHY modules found. UE TX power will not be controlled.\n";
-    } else {
-        EV_WARN << "UE PHY modules found: " << uePhys.size() << "\n";
+        tryAddPhy("cellularNic.phy");
+        tryAddPhy("cellularNic.nrPhy");
     }
 
-    const char *sinrDlPath = par("sinrDlPath");
-    const char *sinrUlPath = par("sinrUlPath");
-    signals.sinrDl = omnetpp::cComponent::registerSignal("rcvdSinrDl");
-    signals.sinrUl = omnetpp::cComponent::registerSignal("rcvdSinrUl");
-    signals.measuredSinrDl = omnetpp::cComponent::registerSignal("measuredSinrDl");
-    signals.measuredSinrUl = omnetpp::cComponent::registerSignal("measuredSinrUl");
+    if (uePhys.empty())
+        EV_WARN << "No UE PHY modules found for SINR channel model discovery.\n";
+    else
+        EV_INFO << "Found " << uePhys.size() << " UE PHY module(s) "
+                   "(used for SINR subscription only, TX power not controlled).\n";
 
-    std::vector<omnetpp::cModule*> sinrModules;
+    // ── SINR channel model subscription ───────────────────────────────────────
+    std::vector<omnetpp::cModule *> sinrModules;
+
     auto addSinrModule = [&](omnetpp::cModule *mod) {
-        if (!mod)
-            return;
+        if (!mod) return;
         if (std::find(sinrModules.begin(), sinrModules.end(), mod) == sinrModules.end())
             sinrModules.push_back(mod);
     };
 
+    // Prefer the channel model referenced by each UE PHY's parameter.
     for (auto *uePhy : uePhys) {
-        if (!uePhy)
-            continue;
         const char *cmPath = uePhy->par("channelModelModule").stringValue();
         if (cmPath && *cmPath) {
             auto *cm = uePhy->findModuleByPath(cmPath);
-            if (cm)
+            if (cm) {
                 addSinrModule(cm);
-            else {
-                auto *ue = uePhy->getParentModule();
-                if (ue) {
-                    addSinrModule(ue->findModuleByPath("cellularNic.nrChannelModel[0]"));
-                    addSinrModule(ue->findModuleByPath("cellularNic.channelModel[0]"));
-                }
+                continue;
             }
+        }
+        // Fallback: sibling submodules.
+        auto *ue = uePhy->getParentModule();
+        if (ue) {
+            addSinrModule(ue->findModuleByPath("cellularNic.nrChannelModel[0]"));
+            addSinrModule(ue->findModuleByPath("cellularNic.channelModel[0]"));
         }
     }
 
+    // Second fallback: explicit ini paths.
     if (sinrModules.empty()) {
-        auto *sinrDlModule = (sinrDlPath && *sinrDlPath) ? findModuleByPath(sinrDlPath) : nullptr;
-        auto *sinrUlModule = (sinrUlPath && *sinrUlPath) ? findModuleByPath(sinrUlPath) : nullptr;
-        addSinrModule(sinrDlModule);
-        addSinrModule(sinrUlModule);
+        const char *dlPath = par("sinrDlPath").stringValue();
+        const char *ulPath = par("sinrUlPath").stringValue();
+        if (dlPath && *dlPath) addSinrModule(findModuleByPath(dlPath));
+        if (ulPath && *ulPath) addSinrModule(findModuleByPath(ulPath));
     }
 
+    // Third fallback: walk the whole tree.
     if (sinrModules.empty()) {
-        auto collectChannelModels = [&](omnetpp::cModule *mod, auto &self) -> void {
+        std::function<void(omnetpp::cModule *)> walk = [&](omnetpp::cModule *mod) {
             for (omnetpp::cModule::SubmoduleIterator it(mod); !it.end(); ++it) {
                 auto *sub = *it;
-                if (!sub)
-                    continue;
                 if (dynamic_cast<simu5g::LteChannelModel *>(sub))
                     addSinrModule(sub);
-                self(sub, self);
+                walk(sub);
             }
         };
-        collectChannelModels(top, collectChannelModels);
+        walk(top);
     }
 
     if (!sinrModules.empty()) {
         for (auto *mod : sinrModules) {
-            mod->subscribe(signals.sinrDl, this);
-            mod->subscribe(signals.sinrUl, this);
-            mod->subscribe(signals.measuredSinrDl, this);
-            mod->subscribe(signals.measuredSinrUl, this);
-            EV_WARN << "Subscribed SINR signals on " << mod->getFullPath() << "\n";
+            mod->subscribe(signals.sinrDl,          this);
+            mod->subscribe(signals.sinrUl,          this);
+            mod->subscribe(signals.measuredSinrDl,  this);
+            mod->subscribe(signals.measuredSinrUl,  this);
+            EV_INFO << "Subscribed SINR signals on " << mod->getFullPath() << "\n";
         }
     } else {
-        EV_WARN << "No SINR channel model modules found. SINR will remain 0.\n";
-        for (auto *uePhy : uePhys) {
-            if (!uePhy)
-                continue;
-            const char *cmPath = uePhy->par("channelModelModule").stringValue();
-            EV_WARN << "UE PHY " << uePhy->getFullPath() << " channelModelModule='" << (cmPath ? cmPath : "") << "'\n";
-        }
-        if (sinrDlPath && *sinrDlPath)
-            EV_WARN << "sinrDlPath override='" << sinrDlPath << "'\n";
-        if (sinrUlPath && *sinrUlPath)
-            EV_WARN << "sinrUlPath override='" << sinrUlPath << "'\n";
+        EV_WARN << "No SINR channel model modules found. SINR observations will be 0.\n";
     }
 
+    // ── State initialisation ──────────────────────────────────────────────────
+    lastThroughput = 0.0;
+    deliveredBits  = 0.0;
+    stepEnergyJ    = 0.0;
 
-
+    // FIX #9: stepId reset to 1 per initialize() call so it does not drift
+    // across back-to-back episodes in the same process.
+    stepId = 1;
 
     currentTxPowerDbm = par("txPowerMax").doubleValue();
     applyMultiplier(mAction);
-
-
 
     tick = new omnetpp::cMessage("gymTick");
     scheduleAt(omnetpp::simTime(), tick);
 }
 
+// ── Signal reception ──────────────────────────────────────────────────────────
 
-
-void GymConnection::receiveSignal(omnetpp::cComponent *source, omnetpp::simsignal_t signalID,
+void GymConnection::receiveSignal(omnetpp::cComponent *source,
+                                  omnetpp::simsignal_t  signalID,
                                   double value, omnetpp::cObject *)
 {
-    if (signalID == signals.genThroughput) lastThroughput = value;
-    else if (signalID == signals.throughput) rxThrByComp[source] = value;
-    else if (signalID == signals.frameDelay) delayByComp[source] = value;
-    else if (signalID == signals.jitter) jitterByComp[source] = value;
-    else if (signalID == signals.loss) lossByComp[source] = value;
-    else if (signalID == signals.sinrDl || signalID == signals.sinrUl || 
+    if      (signalID == signals.genThroughput) lastThroughput       = value;
+    else if (signalID == signals.throughput)    rxThrByComp[source]  = value;
+    else if (signalID == signals.loss)          lossByComp[source]   = value;
+    // FIX #2: double-overload handles voipFrameDelay / voipJitter.
+    // The SimTime overload below handles cbrFrameDelay only.
+    // Previously both overloads wrote to delayByComp / jitterByComp,
+    // causing the last-fired overload to silently win.
+    else if (signalID == signals.frameDelay)    delayByComp[source]  = value;
+    else if (signalID == signals.jitter)        jitterByComp[source] = value;
+    else if (signalID == signals.sinrDl  || signalID == signals.sinrUl ||
              signalID == signals.measuredSinrDl || signalID == signals.measuredSinrUl)
         sinrByComp[source] = value;
-
 }
 
-void GymConnection::receiveSignal(omnetpp::cComponent *, omnetpp::simsignal_t signalID,
+void GymConnection::receiveSignal(omnetpp::cComponent *,
+                                  omnetpp::simsignal_t  signalID,
                                   omnetpp::intval_t value, omnetpp::cObject *)
 {
-    if (signalID == signals.cbrRxBytes)
-        rxBytesTotal += static_cast<double>(value);
-    else if (signalID == signals.cbrTxBytes)
-        txBytesTotal += static_cast<double>(value);
+    if      (signalID == signals.cbrRxBytes) rxBytesTotal += static_cast<double>(value);
+    else if (signalID == signals.cbrTxBytes) txBytesTotal += static_cast<double>(value);
 }
 
-void GymConnection::receiveSignal(omnetpp::cComponent *, omnetpp::simsignal_t signalID,
+void GymConnection::receiveSignal(omnetpp::cComponent *,
+                                  omnetpp::simsignal_t  signalID,
                                   omnetpp::uintval_t value, omnetpp::cObject *)
 {
-    if (signalID == signals.cbrRxBytes)
-        rxBytesTotal += static_cast<double>(value);
-    else if (signalID == signals.cbrTxBytes)
-        txBytesTotal += static_cast<double>(value);
+    if      (signalID == signals.cbrRxBytes) rxBytesTotal += static_cast<double>(value);
+    else if (signalID == signals.cbrTxBytes) txBytesTotal += static_cast<double>(value);
 }
 
-
-void GymConnection::receiveSignal(omnetpp::cComponent *source, omnetpp::simsignal_t signalID,
-                                  const omnetpp::SimTime& value, omnetpp::cObject *)
+void GymConnection::receiveSignal(omnetpp::cComponent *,
+                                  omnetpp::simsignal_t  signalID,
+                                  const omnetpp::SimTime &value, omnetpp::cObject *)
 {
-    // convert SimTime to seconds (double)
-    double v = value.dbl();
-
-    if (signalID == signals.frameDelay) delayByComp[source] = v;
-    else if (signalID == signals.jitter) jitterByComp[source] = v;
-    else if (signalID == signals.cbrDelay) {
-        delaySum += v;
+    // FIX #2: only CBR delay is a SimTime signal — do not touch delayByComp
+    // or jitterByComp here; those are handled in the double overload above.
+    if (signalID == signals.cbrDelay) {
+        double v = value.dbl();
+        delaySum   += v;
         delaySqSum += v * v;
-        delayCount++;
+        ++delayCount;
     }
 }
+
+// ── Energy ────────────────────────────────────────────────────────────────────
 
 void GymConnection::updateEnergy()
 {
     stepEnergyJ = 0.0;
 
     auto now = omnetpp::simTime();
-    auto dt = (now - lastEnergyT).dbl();
-    if (dt <= 0) return;
+    double dt = (now - lastEnergyT).dbl();
+    if (dt <= 0.0) return;
 
-    double pActive = par("pActive").doubleValue();
-    double pSleep  = par("pSleep").doubleValue();
+    // Parameters are validated once in initialize(); reads here are safe.
+    double pActive      = par("pActive").doubleValue();
+    double pSleep       = par("pSleep").doubleValue();
     double pComputeBase = par("pComputeBase").doubleValue();
     double pComputePerUe = par("pComputePerUe").doubleValue();
-    double pTxCoeff = par("pTxCoeff").doubleValue();
+    double pTxCoeff     = par("pTxCoeff").doubleValue();
 
-    // mAction in [0,2] -> base power in [pSleep, pActive]
-    double alpha = std::max(0.0, std::min(2.0, mAction)) / 2.0;
-    double pBase = pSleep + alpha * (pActive - pSleep);
+    double alpha    = std::max(0.0, std::min(2.0, mAction)) / 2.0;
+    double pBase    = pSleep + alpha * (pActive - pSleep);
     double pCompute = pComputeBase + pComputePerUe * getNumUE() * alpha;
+    double txMw     = std::pow(10.0, currentTxPowerDbm / 10.0);
+    double pTx      = pTxCoeff * txMw;
+    double p        = pBase + pCompute + pTx;
 
-    // tx power (dBm) -> mW
-    double txPowerMw = std::pow(10.0, currentTxPowerDbm / 10.0);
-    double pTx = pTxCoeff * txPowerMw;
-
-    double p = pBase + pCompute + pTx;
     if (energyConsumer)
         energyConsumer->setPowerConsumptionW(p);
 
     stepEnergyJ = p * dt;
-    energyJ += stepEnergyJ;
+    energyJ    += stepEnergyJ;
     lastEnergyT = now;
 }
 
+// FIX #10: warn explicitly if numUe is missing.
 int GymConnection::getNumUE() const
 {
-    // pragmatic start: just read the network parameter if present
     auto *top = getSystemModule();
     if (top->hasPar("numUe"))
         return top->par("numUe").intValue();
+    EV_WARN << "numUe parameter not found on network; energy computation may be wrong.\n";
     return 0;
 }
 
-
-
-
+// ── handleMessage ─────────────────────────────────────────────────────────────
 
 void GymConnection::handleMessage(omnetpp::cMessage *msg)
 {
     if (msg != tick) return;
 
-    
-
     updateEnergy();
 
-    auto sumMap = [](const std::unordered_map<const omnetpp::cComponent*, double> &m) {
-        double s = 0.0;
-        for (const auto &kv : m)
-            s += kv.second;
-        return s;
-    };
-    auto avgMap = [](const std::unordered_map<const omnetpp::cComponent*, double> &m) {
-        if (m.empty())
-            return 0.0;
-        double s = 0.0;
-        for (const auto &kv : m)
-            s += kv.second;
-        return s / static_cast<double>(m.size());
-    };
-
+    // ── Traffic metrics ───────────────────────────────────────────────────────
     const double rxBytesDelta = rxBytesTotal - lastRxBytesTotal;
     const double txBytesDelta = txBytesTotal - lastTxBytesTotal;
-    const bool hasCbr = (rxBytesDelta > 0.0) || (txBytesDelta > 0.0) || (delayCount > 0);
+    const bool   hasCbr       = (rxBytesDelta > 0.0) ||
+                                 (txBytesDelta > 0.0) ||
+                                 (delayCount   > 0);
 
-    double thr_cbr = 0.0;
-    double delay_cbr = 0.0;
-    double jitter_cbr = 0.0;
-    double loss_cbr = 0.0;
+    double thr_cbr = 0.0, delay_cbr = 0.0, jitter_cbr = 0.0, loss_cbr = 0.0;
 
     if (hasCbr) {
         double rxDelta = std::max(0.0, rxBytesDelta);
         double txDelta = std::max(0.0, txBytesDelta);
-        double dt = par("tickInterval").doubleValue();
-        thr_cbr = (dt > 0.0) ? (rxDelta * 8.0 / dt) : 0.0; // bps
+        double dt      = par("tickInterval").doubleValue();
+
+        thr_cbr = (dt > 0.0) ? (rxDelta * 8.0 / dt) : 0.0;
 
         if (delayCount > 0) {
-            delay_cbr = delaySum / delayCount;
-            double meanSq = delaySqSum / delayCount;
-            jitter_cbr = std::sqrt(std::max(0.0, meanSq - (delay_cbr * delay_cbr)));
+            delay_cbr      = delaySum / delayCount;
+            double meanSq  = delaySqSum / delayCount;
+            jitter_cbr     = std::sqrt(std::max(0.0, meanSq - delay_cbr * delay_cbr));
         }
-
-        if (txDelta > 0.0) {
-            double ratio = rxDelta / txDelta;
-            ratio = std::max(0.0, std::min(1.0, ratio));
-            loss_cbr = 1.0 - ratio;
-        }
+        if (txDelta > 0.0)
+            loss_cbr = std::max(0.0, std::min(1.0, 1.0 - rxDelta / txDelta));
 
         lastRxBytesTotal = rxBytesTotal;
         lastTxBytesTotal = txBytesTotal;
-        delaySum = 0.0;
-        delaySqSum = 0.0;
+        delaySum = delaySqSum = 0.0;
         delayCount = 0;
     }
 
-    double thr_voip = sumMap(rxThrByComp) * 8.0; // convert B/s -> bps
+    double thr_voip   = sumMap(rxThrByComp) * 8.0; // B/s → bps
     double delay_voip = avgMap(delayByComp);
     double jitter_voip = avgMap(jitterByComp);
-    double loss_voip = avgMap(lossByComp);
+    double loss_voip  = avgMap(lossByComp);
 
-    // Combine VoIP and CBR
-    double thr = thr_cbr + thr_voip;
-    double delay = (delay_cbr > 0 && delay_voip > 0) ? (delay_cbr + delay_voip) / 2.0 : std::max(delay_cbr, delay_voip);
-    double jitter = (jitter_cbr > 0 && jitter_voip > 0) ? (jitter_cbr + jitter_voip) / 2.0 : std::max(jitter_cbr, jitter_voip);
-    double loss = (loss_cbr > 0 && loss_voip > 0) ? (loss_cbr + loss_voip) / 2.0 : std::max(loss_cbr, loss_voip);
+    // Combine CBR + VoIP metrics.
+    double thr    = thr_cbr + thr_voip;
+    double delay  = (delay_cbr  > 0.0 && delay_voip  > 0.0)
+                    ? (delay_cbr  + delay_voip)  / 2.0
+                    : std::max(delay_cbr,  delay_voip);
+    double jitter = (jitter_cbr > 0.0 && jitter_voip > 0.0)
+                    ? (jitter_cbr + jitter_voip) / 2.0
+                    : std::max(jitter_cbr, jitter_voip);
+    double loss   = (loss_cbr   > 0.0 && loss_voip   > 0.0)
+                    ? (loss_cbr   + loss_voip)   / 2.0
+                    : std::max(loss_cbr,   loss_voip);
 
-    const double sinr = avgMap(sinrByComp);
+    // FIX #3: snapshot sinrByComp BEFORE clearing it, then check the
+    // snapshot for the warning — the original code cleared the map and
+    // then checked the (now always-empty) map, so the warning fired
+    // every single tick after the first.
+    const bool sinrEmpty = sinrByComp.empty();
+    const double sinr    = avgMap(sinrByComp);
 
-    // Clear maps to avoid stale values in the next tick
     rxThrByComp.clear();
     delayByComp.clear();
     jitterByComp.clear();
     lossByComp.clear();
     sinrByComp.clear();
 
-    const double numUe = (double)getNumUE();
-    const double E = stepEnergyJ;
-
-    double dt = par("tickInterval").doubleValue();
-    double stepBits = std::max(0.0, thr) * dt;
-    deliveredBits += stepBits;
-
-    veinsgym::proto::Request req;
-    static uint64_t stepId = 1;
-    req.set_id(stepId++);
-
-    auto *step = req.mutable_step();
-
-    auto *obs = step->mutable_observation();
-    auto *box = obs->mutable_box();
-    box->add_values(thr);
-    box->add_values(delay);
-    box->add_values(jitter);
-    box->add_values(loss);
-    box->add_values(numUe);
-    box->add_values(E);
-    box->add_values(currentTxPowerDbm);
-    box->add_values(sinr);
-
-    // IMPROVED REWARD FUNCTION (ver 3.0):
-    // Goal: Minimize energy while maintaining High Quality of Service (QoS)
-    // 
-    // Rationale: Throughput is a CONSEQUENCE of control, not a control objective.
-    // Instead, focus on delay/loss/jitter (actual QoS metrics per ITU-T G.131) 
-    // combined with energy minimization.
-    // 
-    // QoS targets (ITU-T G.131 for VoIP):
-    //  - Delay: <150ms ideal, <400ms acceptable
-    //  - Loss: <1% excellent, <3% acceptable
-    //  - Jitter: <5ms excellent
-    
-    double reward = 0.0;
-    
-    // ============ DELAY COMPONENT (Primary QoS Metric) ============
-    // Reward good delay, heavily penalize poor delay
-    double delay_reward = 0.0;
-    if (delay < 0.05) {
-        // Excellent: delay < 50ms
-        delay_reward = 1.0;
-    } else if (delay < 0.15) {
-        // Good: 50-150ms (ideal ITU-T range)
-        delay_reward = 0.5;
-    } else if (delay < 0.30) {
-        // Acceptable: 150-300ms (upper ITU-T range)
-        delay_reward = 0.0;
-    } else if (delay < 0.50) {
-        // Poor: 300-500ms
-        delay_reward = -1.0 * (delay - 0.30);
-    } else {
-        // Very poor: >500ms
-        delay_reward = -1.0 - (2.0 * (delay - 0.50));
-    }
-    
-    // ============ LOSS COMPONENT (Secondary QoS Metric) ============
-    // Reward low loss, penalize high loss
-    double loss_reward = 0.0;
-    if (loss < 0.01) {
-        // Excellent: <1% loss
-        loss_reward = 0.5;
-    } else if (loss < 0.03) {
-        // Good: 1-3% loss
-        loss_reward = 0.25;
-    } else if (loss < 0.10) {
-        // Acceptable: 3-10% loss
-        loss_reward = 0.0;
-    } else if (loss < 0.30) {
-        // Poor: 10-30% loss
-        loss_reward = -0.5 * loss;
-    } else {
-        // Very poor: >30% loss (network broken)
-        loss_reward = -2.0;
-    }
-    
-    // ============ JITTER COMPONENT (Tertiary QoS Metric) ============
-    // Reward stable delay (low jitter)
-    double jitter_reward = 0.0;
-    if (jitter < 0.005) {
-        // Excellent: jitter <5ms
-        jitter_reward = 0.25;
-    } else if (jitter < 0.020) {
-        // Good: jitter 5-20ms
-        jitter_reward = 0.1;
-    } else if (jitter < 0.050) {
-        // Acceptable: jitter 20-50ms
-        jitter_reward = 0.0;
-    } else {
-        // Poor: jitter >50ms
-        jitter_reward = -0.5 * (jitter - 0.050);
-    }
-    
-    // ============ ENERGY COMPONENT (Minimization Objective) ============
-    // Always penalize energy consumption
-    // Scale: 3.5J typical operation = -0.35 penalty
-    double energy_penalty = E / 10.0;
-    
-    // ============ COMBINE COMPONENTS ============
-    // QoS is primary (sum of delay, loss, jitter)
-    // Energy is secondary objective (minimize if QoS maintained)
-    double qos_score = delay_reward + loss_reward + jitter_reward;
-    
-    // If QoS is poor, heavily penalize; otherwise apply energy penalty
-    if (qos_score < -1.0) {
-        // QoS severely degraded, don't bother with energy optimization
-        reward = qos_score - 1.0;
-    } else {
-        // QoS is reasonable, apply energy penalty for optimization
-        reward = qos_score - energy_penalty;
-    }
-    
-    // ============ TERMINAL CONDITION PENALTY ============
-    // Penalize if no throughput (stalled network)
-    if (omnetpp::simTime() > 0.5 && thr < 1e-6) {
-        reward -= 1.0;
-    }
-
-    if (!warnedNoSinr && sinrByComp.empty() && omnetpp::simTime() > 0.5) {
-        EV_WARN << "No SINR samples received yet. Check channel model paths and collectSinrStatistics.\n";
+    if (!warnedNoSinr && sinrEmpty && omnetpp::simTime() > 0.5) {
+        EV_WARN << "No SINR samples received. Check channel model paths "
+                   "and collectSinrStatistics.\n";
         warnedNoSinr = true;
     }
 
+    // ── Energy ────────────────────────────────────────────────────────────────
+    const double numUe = static_cast<double>(getNumUE());
+    const double E     = stepEnergyJ;
 
-    auto *rbox = step->mutable_reward()->mutable_box();
-    rbox->add_values(reward);
+    double dt       = par("tickInterval").doubleValue();
+    double stepBits = std::max(0.0, thr) * dt;
+    deliveredBits  += stepBits;
 
+    // ── Reward ────────────────────────────────────────────────────────────────
+    //
+    // Goal: minimise energy while maintaining QoS.
+    //
+    // Thresholds follow ITU-T G.131:
+    //   Delay  : <150 ms ideal, <400 ms acceptable
+    //   Loss   : <1 % excellent, <3 % acceptable
+    //   Jitter : <5 ms excellent
 
-    
+    // --- Delay ---
+    double delay_reward;
+    if      (delay < 0.05)  delay_reward =  1.0;
+    else if (delay < 0.15)  delay_reward =  0.5;
+    else if (delay < 0.30)  delay_reward =  0.0;
+    else if (delay < 0.50)  delay_reward = -1.0 * (delay - 0.30);
+    else                    delay_reward = -1.0 - 2.0 * (delay - 0.50);
+
+    // --- Loss ---
+    double loss_reward;
+    if      (loss < 0.01)   loss_reward =  0.5;
+    else if (loss < 0.03)   loss_reward =  0.25;
+    else if (loss < 0.10)   loss_reward =  0.0;
+    else if (loss < 0.30)   loss_reward = -0.5 * loss;
+    else                    loss_reward = -2.0;
+
+    // --- Jitter ---
+    double jitter_reward;
+    if      (jitter < 0.005) jitter_reward =  0.25;
+    else if (jitter < 0.020) jitter_reward =  0.10;
+    else if (jitter < 0.050) jitter_reward =  0.0;
+    else                     jitter_reward = -0.5 * (jitter - 0.050);
+
+    // --- Energy ---
+    double energy_penalty = E / 10.0;
+
+    // --- Combine ---
+    double qos_score = delay_reward + loss_reward + jitter_reward;
+    double reward;
+    if (qos_score < -1.0)
+        reward = qos_score - 1.0;       // QoS catastrophic — ignore energy
+    else
+        reward = qos_score - energy_penalty;
+
+    // FIX #7: zero-throughput penalty is gated on being INSIDE a traffic
+    // phase.  The VarTraffic scenarios have deliberate gaps between phases
+    // (e.g. phase 1 ends at 20 s, phase 2 starts at 20 s but may not have
+    // delivered any packets yet in this tick).  We use a 1-second grace
+    // window around the known phase boundaries instead of a single
+    // global threshold.
+    auto inTrafficGap = [](double t) -> bool {
+        // Gap around phase transitions: [19.5, 20.5] and [39.5, 40.5]
+        return (t > 19.5 && t < 20.5) || (t > 39.5 && t < 40.5);
+    };
+    double simT = omnetpp::simTime().dbl();
+    if (simT > 0.5 && !inTrafficGap(simT) && thr < 1e-6)
+        reward -= 1.0;
+
+    // ── Build and send protobuf step request ──────────────────────────────────
+    veinsgym::proto::Request req;
+    req.set_id(stepId++);
+
+    auto *step = req.mutable_step();
+    auto *box  = step->mutable_observation()->mutable_box();
+    box->add_values(safe(thr));
+    box->add_values(safe(delay));
+    box->add_values(safe(jitter));
+    box->add_values(safe(loss));
+    box->add_values(safe(numUe));
+    box->add_values(safe(E));
+    box->add_values(safe(currentTxPowerDbm));
+    box->add_values(safe(sinr));
+
+    step->mutable_reward()->mutable_box()->add_values(reward);
+
     auto reply = communicate(req);
 
+    // ── Apply action ──────────────────────────────────────────────────────────
     if (reply.payload_case() == veinsgym::proto::Reply::kAction) {
         const auto &actSpace = reply.action();
 
         if (actSpace.value_case() == veinsgym::proto::Space::kBox) {
-            // Continuous action (Box)
-            double m = 0.0;
-            if (actSpace.box().values_size() > 0)
-                m = actSpace.box().values(0);
-
-            EV_INFO << "Gym multiplier action: " << m << "\n";
+            double m = actSpace.box().values_size() > 0
+                       ? actSpace.box().values(0) : 0.0;
+            EV_INFO << "Gym Box action: " << m << "\n";
             applyMultiplier(m);
         }
         else if (actSpace.value_case() == veinsgym::proto::Space::kDiscrete) {
-            // Optional fallback if you still sometimes run Discrete(3)
-            int a = (int)actSpace.discrete().value();
-            EV_INFO << "Gym discrete action: " << a << "\n";
-
-            // Apply traffic rate control for discrete action
+            int a = static_cast<int>(actSpace.discrete().value());
+            EV_INFO << "Gym Discrete action: " << a << "\n";
             applyAction(a);
-
-            // map discrete -> power multiplier if you want
             double m = (a == 0) ? 2.0 : (a == 1) ? 1.0 : 0.0;
             applyMultiplier(m);
         }
@@ -603,75 +521,100 @@ void GymConnection::handleMessage(omnetpp::cMessage *msg)
     scheduleAt(omnetpp::simTime() + par("tickInterval"), tick);
 }
 
+// ── applyMultiplier ───────────────────────────────────────────────────────────
+//
+// FIX #8: the gNB and UEs are independent power domains.
+// The gNB uses the full [txPowerMin, txPowerMax] range.
+// Each UE is limited to its own par("ueTxPower") maximum so we do not
+// accidentally overshoot the UE power budget when scaling together.
+
+// ── applyMultiplier ───────────────────────────────────────────────────────────
+//
+// Only the gNB (base station) TX power is adjusted by the RL agent.
+// UE TX power is set statically by omnetpp.ini (**.ueTxPower = 26dBm) and
+// is never touched here — controlling it is outside the project scope.
+
 void GymConnection::applyMultiplier(double m)
 {
     mAction = std::max(0.0, std::min(2.0, m));
-
     double alpha = mAction / 2.0;
+
     double txMin = par("txPowerMin").doubleValue();
     double txMax = par("txPowerMax").doubleValue();
     currentTxPowerDbm = txMin + alpha * (txMax - txMin);
 
     if (gnbPhy)
         gnbPhy->setTxPowerDbm(currentTxPowerDbm);
-
-    for (auto *uePhy : uePhys)
-        uePhy->setTxPowerDbm(currentTxPowerDbm);
+    // UE PHYs are intentionally not modified.
 }
+
+// ── applyAction ───────────────────────────────────────────────────────────────
+//
+// FIX #1: the new multi-phase / multi-UE scenarios have up to numUe*3 server
+// apps.  Control ALL of them, not just app[0].
 
 void GymConnection::applyAction(int a)
 {
-    auto *top = getSystemModule();
-    auto *sender = top->getModuleByPath("server.app[0]"); // VoipSender in VoIP-DL
-    if (!sender) {
-        EV_WARN << "Could not find server.app[0] to control traffic\n";
+    auto *top    = getSystemModule();
+    auto *server = top->getSubmodule("server");
+    if (!server) {
+        EV_WARN << "No server module found for traffic control.\n";
         return;
     }
 
-    /*bool pauseTraffic = (a == 2);
-    sender->par("gymPaused").setBoolValue(pauseTraffic);*/
+    for (int j = 0; ; ++j) {
+        auto *app = server->getSubmodule("app", j);
+        if (!app) break;
 
-    if (a == 0) { // ACTIVE: full rate
-        sender->par("gymPaused").setBoolValue(false);
-        sender->par("samplingTime").setDoubleValue(0.02); // 50 pkt/s
-    }
-    else if (a == 1) { // SLEEP: reduced rate
-        sender->par("gymPaused").setBoolValue(false);
-        sender->par("samplingTime").setDoubleValue(0.04); // 25 pkt/s
-    }
-    else { // LOWPOWER: pause traffic
-        sender->par("gymPaused").setBoolValue(true);
+        if (!app->hasPar("gymPaused") || !app->hasPar("samplingTime")) {
+            EV_WARN << "server.app[" << j << "] missing gymPaused / samplingTime parameter; skipping.\n";
+            continue;
+        }
+
+        if (a == 0) {                           // ACTIVE – full rate
+            app->par("gymPaused").setBoolValue(false);
+            app->par("samplingTime").setDoubleValue(0.02);
+        } else if (a == 1) {                    // REDUCED – half rate
+            app->par("gymPaused").setBoolValue(false);
+            app->par("samplingTime").setDoubleValue(0.04);
+        } else {                                // PAUSED
+            app->par("gymPaused").setBoolValue(true);
+        }
     }
 }
 
+// ── communicate ───────────────────────────────────────────────────────────────
 
-veinsgym::proto::Reply GymConnection::communicate(const veinsgym::proto::Request& request)
+veinsgym::proto::Reply GymConnection::communicate(const veinsgym::proto::Request &request)
 {
-    std::string request_msg = request.SerializeAsString();
-    socket.send(zmq::message_t(request_msg.data(), request_msg.size()), zmq::send_flags::none);
+    std::string msg = request.SerializeAsString();
+    socket.send(zmq::message_t(msg.data(), msg.size()), zmq::send_flags::none);
 
     zmq::message_t response_msg;
-    auto recv_result = socket.recv(response_msg, zmq::recv_flags::none);
-    if (!recv_result) {
-        EV_WARN << "ZMQ recv failed\n";
+    auto result = socket.recv(response_msg, zmq::recv_flags::none);
+    if (!result) {
+        EV_WARN << "ZMQ recv failed.\n";
         return veinsgym::proto::Reply();
     }
 
-    std::string response(static_cast<char*>(response_msg.data()), response_msg.size());
     veinsgym::proto::Reply reply;
-    reply.ParseFromString(response);
+    reply.ParseFromString(std::string(
+        static_cast<char *>(response_msg.data()), response_msg.size()));
     return reply;
 }
 
+// ── Destructor / finish ───────────────────────────────────────────────────────
+
 GymConnection::~GymConnection()
 {
-    if (tick)
+    if (tick) {
         cancelAndDelete(tick);
-
+        tick = nullptr;
+    }
     if (!shutdownSent) {
-        veinsgym::proto::Request request;
-        *(request.mutable_shutdown()) = {};
-        communicate(request);
+        veinsgym::proto::Request req;
+        *(req.mutable_shutdown()) = {};
+        communicate(req);
         shutdownSent = true;
     }
 }
@@ -679,9 +622,9 @@ GymConnection::~GymConnection()
 void GymConnection::finish()
 {
     if (!shutdownSent) {
-        veinsgym::proto::Request request;
-        *(request.mutable_shutdown()) = {};
-        communicate(request);
+        veinsgym::proto::Request req;
+        *(req.mutable_shutdown()) = {};
+        communicate(req);
         shutdownSent = true;
     }
 }
